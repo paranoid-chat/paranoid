@@ -48,7 +48,11 @@ type Server struct {
 	createLim  *limiter
 	depositLim *limiter
 	mux        *http.ServeMux
+	pusher     *Pusher // nil : notifications désactivées
 }
+
+// SetPusher active l'envoi de notifications Web Push après chaque dépôt.
+func (s *Server) SetPusher(p *Pusher) { s.pusher = p }
 
 func NewServer(cfg Config, store *Store) *Server {
 	s := &Server{
@@ -65,6 +69,9 @@ func NewServer(cfg Config, store *Store) *Server {
 	s.mux.HandleFunc("GET /v1/box/{box_id}/msgs", s.handleFetch)
 	s.mux.HandleFunc("DELETE /v1/box/{box_id}/msgs", s.handleAck)
 	s.mux.HandleFunc("DELETE /v1/box/{box_id}", s.handleDeleteBox)
+	s.mux.HandleFunc("GET /v1/push/vapid", s.handleVapid)
+	s.mux.HandleFunc("PUT /v1/box/{box_id}/push", s.handleSetPush)
+	s.mux.HandleFunc("DELETE /v1/box/{box_id}/push", s.handleClearPush)
 	return s
 }
 
@@ -121,18 +128,24 @@ func tooMany(w http.ResponseWriter, retry time.Duration) {
 
 // authenticate vérifie la signature d'une requête de lecture. En cas d'échec, la réponse est déjà écrite.
 func (s *Server) authenticate(w http.ResponseWriter, r *http.Request, boxID []byte) bool {
+	_, ok := s.authBody(w, r, boxID)
+	return ok
+}
+
+// authBody vérifie la signature et renvoie le corps de la requête (couvert par la signature).
+func (s *Server) authBody(w http.ResponseWriter, r *http.Request, boxID []byte) ([]byte, bool) {
 	pub, err := s.store.PubKey(boxID)
 	if errors.Is(err, ErrNotFound) {
 		http.Error(w, "boîte inconnue", http.StatusNotFound)
-		return false
+		return nil, false
 	}
 	if err != nil {
 		http.Error(w, "erreur interne", http.StatusInternalServerError)
-		return false
+		return nil, false
 	}
-	fail := func() bool {
+	fail := func() ([]byte, bool) {
 		http.Error(w, "authentification invalide", http.StatusUnauthorized)
-		return false
+		return nil, false
 	}
 
 	tsStr := r.Header.Get("X-Timestamp")
@@ -174,7 +187,7 @@ func (s *Server) authenticate(w http.ResponseWriter, r *http.Request, boxID []by
 		return fail()
 	}
 	_ = s.store.Touch(boxID, now.Unix())
-	return true
+	return body, true
 }
 
 // ---------- handlers ----------
@@ -230,6 +243,11 @@ func (s *Server) handleDeposit(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		http.Error(w, "erreur interne", http.StatusInternalServerError)
 	default:
+		if s.pusher != nil {
+			if t, err := s.store.PushTarget(writeID); err == nil && t != nil {
+				s.pusher.Notify(*t, hex.EncodeToString(writeID))
+			}
+		}
 		var out [8]byte
 		binary.BigEndian.PutUint64(out[:], seq)
 		w.Header().Set("Content-Type", "application/octet-stream")
@@ -318,6 +336,70 @@ func (s *Server) handleDeleteBox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.store.DeleteBox(boxID); err != nil {
+		http.Error(w, "erreur interne", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ---------- notifications ----------
+
+func (s *Server) handleVapid(w http.ResponseWriter, r *http.Request) {
+	if s.pusher == nil {
+		http.Error(w, "notifications désactivées sur ce relais", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.WriteHeader(http.StatusOK)
+	w.Write(s.pusher.PublicKey())
+}
+
+// Corps : longueur de l'URL (2 octets) ‖ URL ‖ p256dh (65) ‖ auth (16).
+func (s *Server) handleSetPush(w http.ResponseWriter, r *http.Request) {
+	boxID, ok := decodeID(r.PathValue("box_id"))
+	if !ok {
+		http.Error(w, "identifiant invalide", http.StatusBadRequest)
+		return
+	}
+	if s.pusher == nil {
+		http.Error(w, "notifications désactivées sur ce relais", http.StatusNotImplemented)
+		return
+	}
+	body, ok := s.authBody(w, r, boxID)
+	if !ok {
+		return
+	}
+	if len(body) < 2 {
+		http.Error(w, "corps invalide", http.StatusBadRequest)
+		return
+	}
+	n := int(binary.BigEndian.Uint16(body))
+	if len(body) != 2+n+65+16 {
+		http.Error(w, "corps invalide", http.StatusBadRequest)
+		return
+	}
+	t := PushTarget{URL: string(body[2 : 2+n]), P256dh: body[2+n : 2+n+65], Auth: body[2+n+65:]}
+	if err := s.pusher.Validate(t); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := s.store.SetPush(boxID, &t); err != nil {
+		http.Error(w, "erreur interne", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleClearPush(w http.ResponseWriter, r *http.Request) {
+	boxID, ok := decodeID(r.PathValue("box_id"))
+	if !ok {
+		http.Error(w, "identifiant invalide", http.StatusBadRequest)
+		return
+	}
+	if !s.authenticate(w, r, boxID) {
+		return
+	}
+	if err := s.store.SetPush(boxID, nil); err != nil {
 		http.Error(w, "erreur interne", http.StatusInternalServerError)
 		return
 	}
