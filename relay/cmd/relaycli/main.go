@@ -40,6 +40,7 @@ Commandes :
   contacts                          liste les contacts
   remove NOM                        supprime le contact et sa boîte sur le relais
   reset NOM                         réinitialise la session chiffrée avec NOM (à faire des deux côtés)
+  debug NOM                         affiche l'état de la session avec NOM (sans secret)
 
 Le dossier vaut par défaut $RELAYCLI_DIR, sinon ./data.
 `)
@@ -78,6 +79,8 @@ func main() {
 		err = withState(*dir, cmdContacts)
 	case "remove":
 		err = withState(*dir, func(s *State) error { return cmdRemove(s, args[1:]) })
+	case "debug":
+		err = withState(*dir, func(s *State) error { return cmdDebug(s, args[1:]) })
 	case "reset":
 		err = withState(*dir, func(s *State) error { return cmdReset(s, args[1:]) })
 	case "help", "-h", "--help":
@@ -413,7 +416,7 @@ func recvFrom(s *State, name string) (int, error) {
 			p, err := s.openBlob(c, r.Blob)
 			switch {
 			case err != nil:
-				fmt.Printf("[%s] message n° %d rejeté : %v\n", name, r.Seq, err)
+				fmt.Printf("[%s] message n° %d rejeté : %v%s\n", name, r.Seq, err, blobInfo(r.Blob))
 			case p.Type != TypeText:
 				fmt.Printf("[%s] message n° %d de type %d ignoré\n", name, r.Seq, p.Type)
 			default:
