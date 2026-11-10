@@ -196,6 +196,33 @@ class Messenger(
         return ok.get()
     }
 
+    /** Clé VAPID du relais principal, à transmettre au distributeur UnifiedPush. */
+    fun vapidKey(): ByteArray? = clientFor(state.relay).vapidKey()
+
+    /**
+     * Enregistre le point de notification sur toutes les boîtes qui ne l'ont pas encore.
+     * Renvoie le nombre de boîtes mises à jour ; une erreur sur une boîte n'arrête pas les autres.
+     */
+    @Synchronized
+    fun syncPush(url: String, p256dh: ByteArray, auth: ByteArray): Int {
+        var n = 0
+        var firstError: Exception? = null
+        for (c in state.contacts.values) {
+            val b = c.myBox ?: continue
+            if (b.pushUrl == url || c.burned) continue
+            try {
+                clientFor(b.relay).setPush(b.boxId, b.readSeed, url, p256dh, auth)
+                b.pushUrl = url
+                n++
+            } catch (e: Exception) {
+                if (firstError == null) firstError = e
+            }
+        }
+        if (n > 0) save()
+        firstError?.let { if (n == 0) throw it }
+        return n
+    }
+
     /** Réinitialise la session chiffrée (à faire des deux côtés). */
     @Synchronized
     fun resetSession(name: String) {

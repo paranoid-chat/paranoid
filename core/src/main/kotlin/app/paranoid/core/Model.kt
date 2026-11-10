@@ -6,7 +6,10 @@ import java.io.DataInputStream
 import java.io.DataOutputStream
 
 /** Boîte que j'ai créée pour un contact : il y dépose, je relève. */
-class MyBox(val relay: RelayRef, val boxId: ByteArray, val writeId: ByteArray, val readSeed: ByteArray, var lastSeq: Long = 0)
+class MyBox(val relay: RelayRef, val boxId: ByteArray, val writeId: ByteArray, val readSeed: ByteArray, var lastSeq: Long = 0) {
+    /** Point de notification UnifiedPush enregistré sur le relais pour cette boîte. */
+    var pushUrl: String? = null
+}
 
 /** Boîte du contact, où je dépose. */
 class TheirBox(val relay: RelayRef, val writeId: ByteArray)
@@ -53,7 +56,7 @@ class AppState(
 /** Sérialisation binaire de l'état. Le chiffrement au repos est fait par l'appli (Keystore). */
 internal object StateCodec {
     private const val MAGIC = 0x50524E44 // "PRND"
-    private const val VERSION = 2 // v2 : indicateur « bouton rouge » par contact
+    private const val VERSION = 3 // v2 : indicateur « bouton rouge » ; v3 : point de notification par boîte
 
     fun encode(s: AppState): ByteArray {
         val bos = ByteArrayOutputStream()
@@ -126,6 +129,9 @@ internal object StateCodec {
         }
         writeInt(c.pendingFromUnknown)
         writeBoolean(c.burned)
+        val push = c.myBox?.pushUrl
+        writeBoolean(push != null)
+        if (push != null) writeUTF(push)
     }
 
     private fun DataInputStream.contact(version: Int): Contact {
@@ -142,6 +148,10 @@ internal object StateCodec {
         }
         c.pendingFromUnknown = readInt()
         if (version >= 2) c.burned = readBoolean()
+        if (version >= 3 && readBoolean()) {
+            val push = readUTF()
+            c.myBox?.pushUrl = push
+        }
         return c
     }
 }

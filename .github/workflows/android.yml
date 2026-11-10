@@ -41,6 +41,9 @@ jobs:
           PARANOID_KEY_PASSWORD: ${{ secrets.PARANOID_KEY_PASSWORD }}
         run: ./gradlew --no-daemon --stacktrace :core:test :app:assembleRelease
 
+      - name: Version du connecteur UnifiedPush
+        run: ./gradlew --no-daemon -q :app:dependencyInsight --dependency org.unifiedpush.android:connector --configuration releaseRuntimeClasspath | head -3
+
       - name: Rapport de tests
         if: failure()
         uses: actions/upload-artifact@v4

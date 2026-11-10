@@ -144,6 +144,28 @@ class RelayClient(private val ref: RelayRef, private val timeoutMs: Int = 20_000
         if (r.code != 204) fail(r)
     }
 
+    /** Clé VAPID du relais (65 octets), ou null si les notifications y sont désactivées. */
+    fun vapidKey(): ByteArray? {
+        val r = request("GET", "/v1/push/vapid", null, null)
+        if (r.code == 404) return null
+        if (r.code != 200 || r.body.size != 65) fail(r)
+        return r.body
+    }
+
+    /** Enregistre le point de notification UnifiedPush de la boîte (requête signée). */
+    fun setPush(boxId: ByteArray, readSeed: ByteArray, url: String, p256dh: ByteArray, auth: ByteArray) {
+        val u = url.toByteArray(Charsets.UTF_8)
+        require(u.size <= 512 && p256dh.size == 65 && auth.size == 16) { "point de notification invalide" }
+        val body = cat(byteArrayOf((u.size ushr 8).toByte(), u.size.toByte()), u, p256dh, auth)
+        val r = request("PUT", "/v1/box/${b64(boxId)}/push", body, readSeed)
+        if (r.code != 204) fail(r)
+    }
+
+    fun clearPush(boxId: ByteArray, readSeed: ByteArray) {
+        val r = request("DELETE", "/v1/box/${b64(boxId)}/push", null, readSeed)
+        if (r.code != 204 && r.code != 404) fail(r)
+    }
+
     fun deleteBox(boxId: ByteArray, readSeed: ByteArray) {
         val r = request("DELETE", "/v1/box/${b64(boxId)}", null, readSeed)
         if (r.code != 204 && r.code != 404) fail(r)

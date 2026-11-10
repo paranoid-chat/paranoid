@@ -225,7 +225,12 @@ fun ContactsScreen(ui: Ui, vm: MainViewModel) {
         Column(Modifier.padding(pad).fillMaxSize()) {
             ConnectionBanner(ui)
             Text("Mon empreinte : ${ui.mySafety}", style = MaterialTheme.typography.labelMedium,
-                fontFamily = FontFamily.Monospace, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                fontFamily = FontFamily.Monospace, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp))
+            ui.pushStatus?.let {
+                Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp))
+            }
+            Spacer(Modifier.height(8.dp))
             HorizontalDivider()
             if (ui.contacts.isEmpty()) {
                 Text("Aucun contact. Appuie sur + et échangez vos QR en face à face.",
