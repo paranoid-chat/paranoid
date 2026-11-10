@@ -16,14 +16,15 @@ import (
 	qrcode "github.com/skip2/go-qrcode"
 )
 
-// terminalQR dessine le QR avec des demi-blocs. Sur un terminal sombre (cas par défaut sous
-// Windows Terminal et PowerShell), les couleurs sont inversées pour obtenir du noir sur blanc.
+// terminalQR dessine le QR avec des demi-blocs. go-qrcode dessine les modules sombres avec la
+// couleur de fond du terminal : c'est le bon sens sur un terminal sombre (Windows Terminal,
+// PowerShell). Sur un terminal clair, il faut inverser.
 func terminalQR(text string, darkTerminal bool) (string, error) {
 	q, err := qrcode.New(text, qrcode.Medium)
 	if err != nil {
 		return "", err
 	}
-	return q.ToSmallString(darkTerminal), nil
+	return q.ToSmallString(!darkTerminal), nil
 }
 
 func writeQRPNG(text, path string) error {
