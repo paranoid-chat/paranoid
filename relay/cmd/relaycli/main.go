@@ -41,6 +41,7 @@ Commandes :
   remove NOM                        supprime le contact et sa boîte sur le relais
   reset NOM                         réinitialise la session chiffrée avec NOM (à faire des deux côtés)
   debug NOM                         affiche l'état de la session avec NOM (sans secret)
+  panic --oui                       bouton rouge : alerte tous les contacts puis efface l'identité
 
 Le dossier vaut par défaut $RELAYCLI_DIR, sinon ./data.
 `)
@@ -79,6 +80,8 @@ func main() {
 		err = withState(*dir, cmdContacts)
 	case "remove":
 		err = withState(*dir, func(s *State) error { return cmdRemove(s, args[1:]) })
+	case "panic":
+		err = withState(*dir, func(s *State) error { return cmdPanic(s, *dir, args[1:]) })
 	case "debug":
 		err = withState(*dir, func(s *State) error { return cmdDebug(s, args[1:]) })
 	case "reset":
@@ -307,6 +310,9 @@ func sendMessage(s *State, name, msg string) (uint64, error) {
 	if c == nil || c.Their == nil || c.IK == nil {
 		return 0, fmt.Errorf("contact %s inconnu : enregistre d'abord son invitation avec « add »", name)
 	}
+	if c.Burned {
+		return 0, fmt.Errorf("%s a utilisé le bouton rouge : impossible de lui écrire", name)
+	}
 	text := []byte(msg)
 	if len(text) > MaxTextV2 {
 		return 0, fmt.Errorf("message trop long (%d octets, max %d)", len(text), MaxTextV2)
@@ -417,6 +423,16 @@ func recvFrom(s *State, name string) (int, error) {
 			switch {
 			case err != nil:
 				fmt.Printf("[%s] message n° %d rejeté : %v%s\n", name, r.Seq, err, blobInfo(r.Blob))
+			case p.Type == TypeAlert:
+				id := enc(p.ID[:])
+				if c.seen(id) {
+					break
+				}
+				c.markSeen(id)
+				c.Burned = true
+				when := time.Unix(p.TS, 0).Local().Format("02/01 15:04:05")
+				fmt.Printf("[%s] !!! %s a utilisé le bouton rouge : sa clé privée est détruite et il ne peut plus lire cette conversation. Pense à supprimer ta conversation avec %s (remove %s).\n", when, name, name, name)
+				shown++
 			case p.Type != TypeText:
 				fmt.Printf("[%s] message n° %d de type %d ignoré\n", name, r.Seq, p.Type)
 			default:

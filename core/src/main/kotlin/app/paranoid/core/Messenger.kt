@@ -9,6 +9,7 @@ class Messenger(
     val state: AppState,
     private val persist: (AppState) -> Unit,
     private val clientFor: (RelayRef) -> RelayClient = { RelayClient(it) },
+    private val alertClientFor: (RelayRef, Int) -> RelayClient = { r, t -> RelayClient(r, t) },
 ) {
     class PollResult(
         val received: List<Pair<Contact, ChatMessage>>,
@@ -73,6 +74,7 @@ class Messenger(
     fun send(name: String, text: String): ChatMessage {
         val c = contact(name)
         val their = c.their
+        if (c.burned) throw IllegalStateException("$name a utilisé le bouton rouge : impossible de lui écrire")
         if (!c.ready || their == null) throw IllegalStateException("l'échange de QR avec $name n'est pas terminé")
         val body = text.toByteArray(Charsets.UTF_8)
         require(body.size <= MAX_TEXT) { "message trop long (${body.size} octets, max $MAX_TEXT)" }
@@ -134,10 +136,15 @@ class Messenger(
                     val e = env(c)
                     val p = decodeInner(session(c, e).decrypt(e, r.blob))
                     val id = b64(p.id)
-                    if (p.type == TYPE_TEXT && id !in c.seen) {
+                    if ((p.type == TYPE_TEXT || p.type == TYPE_ALERT) && id !in c.seen) {
                         c.seen.addLast(id)
                         while (c.seen.size > 500) c.seen.removeFirst()
-                        val m = ChatMessage(p.id, false, p.ts, p.body.toString(Charsets.UTF_8), MessageStatus.RECEIVED)
+                        val m = if (p.type == TYPE_ALERT) {
+                            c.burned = true
+                            ChatMessage(p.id, false, p.ts, "", MessageStatus.ALERT)
+                        } else {
+                            ChatMessage(p.id, false, p.ts, p.body.toString(Charsets.UTF_8), MessageStatus.RECEIVED)
+                        }
                         c.messages.add(m)
                         out.add(c to m)
                     }
@@ -151,6 +158,42 @@ class Messenger(
             client.ack(box.boxId, box.readSeed, box.lastSeq)
             if (!more) return rejected
         }
+    }
+
+    /**
+     * Bouton rouge : chiffre une alerte pour chaque contact, puis les dépose en parallèle.
+     * Rend la main au plus tard après [timeoutMs] : la destruction qui suit ne doit jamais
+     * attendre le réseau. Renvoie le nombre d'alertes acceptées par le relais.
+     */
+    @Synchronized
+    fun sendAlerts(timeoutMs: Long = 5_000): Int {
+        val jobs = ArrayList<Pair<TheirBox, ByteArray>>()
+        for (c in state.contacts.values) {
+            val their = c.their ?: continue
+            if (!c.ready || c.burned) continue
+            try {
+                val e = env(c)
+                jobs.add(their to session(c, e).encrypt(e, encodeInner(Plain(TYPE_ALERT, randomBytes(16), System.currentTimeMillis() / 1000, ByteArray(0)))))
+            } catch (ex: Exception) {
+                // Une session cassée ne doit pas empêcher les autres alertes.
+            }
+        }
+        if (jobs.isEmpty()) return 0
+        runCatching { save() }
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(minOf(jobs.size, 8)) { r ->
+            Thread(r, "alerte").apply { isDaemon = true }
+        }
+        val ok = java.util.concurrent.atomic.AtomicInteger()
+        val perRequest = maxOf(1_000L, timeoutMs - 500).toInt()
+        for ((their, blob) in jobs) {
+            pool.execute {
+                runCatching { alertClientFor(their.relay, perRequest).deposit(their.writeId, blob) }.onSuccess { ok.incrementAndGet() }
+            }
+        }
+        pool.shutdown()
+        pool.awaitTermination(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+        pool.shutdownNow()
+        return ok.get()
     }
 
     /** Réinitialise la session chiffrée (à faire des deux côtés). */

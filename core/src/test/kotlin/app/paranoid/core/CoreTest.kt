@@ -242,6 +242,20 @@ class DoubleRatchetTest {
     }
 
     @Test
+    fun alertAndBurnedSurviveCodec() {
+        val (a, b) = peers()
+        val blob = a.s.encrypt(a.env, encodeInner(Plain(TYPE_ALERT, randomBytes(16), 7, ByteArray(0))))
+        val p = decodeInner(b.s.decrypt(b.env, blob))
+        assertEquals(TYPE_ALERT, p.type)
+        assertEquals(0, p.body.size)
+        val st = AppState(b.seed, b.x, RelayRef("https://x:1", randomBytes(32)))
+        st.contacts["a"] = Contact("a").also { it.burned = true; it.messages.add(ChatMessage(p.id, false, 7, "", MessageStatus.ALERT)) }
+        val back = AppState.decode(st.encode())
+        assertTrue(back.contacts["a"]!!.burned)
+        assertEquals(MessageStatus.ALERT, back.contacts["a"]!!.messages[0].status)
+    }
+
+    @Test
     fun maxText() {
         val (a, b) = peers()
         val long = "z".repeat(MAX_TEXT)

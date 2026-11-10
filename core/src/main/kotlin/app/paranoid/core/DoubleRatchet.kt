@@ -14,6 +14,9 @@ private const val INNER_HEAD = 1 + 16 + 8 + 2
 const val MAX_TEXT = DR_INNER_LEN - INNER_HEAD // 1963 octets
 const val TYPE_TEXT: Byte = 1
 
+/** Alerte « bouton rouge » : l'expéditeur a détruit sa clé privée. Corps vide. */
+const val TYPE_ALERT: Byte = 2
+
 private const val MAX_SKIP = 1000L
 private const val MAX_SKIPPED = 2000
 private const val INFO_SK = "relay-dr-v1/sk"

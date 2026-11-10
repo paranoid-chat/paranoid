@@ -11,7 +11,8 @@ class MyBox(val relay: RelayRef, val boxId: ByteArray, val writeId: ByteArray, v
 /** Boîte du contact, où je dépose. */
 class TheirBox(val relay: RelayRef, val writeId: ByteArray)
 
-enum class MessageStatus { SENDING, SENT, FAILED, RECEIVED }
+// Ajouter les nouvelles valeurs à la fin : l'ordinal est sérialisé.
+enum class MessageStatus { SENDING, SENT, FAILED, RECEIVED, ALERT }
 
 class ChatMessage(val id: ByteArray, val outgoing: Boolean, val ts: Long, val text: String, var status: MessageStatus)
 
@@ -24,6 +25,9 @@ class Contact(val name: String) {
     val seen: ArrayDeque<String> = ArrayDeque()
     val messages: MutableList<ChatMessage> = mutableListOf()
     var pendingFromUnknown: Int = 0
+
+    /** Le contact a utilisé le bouton rouge : sa clé est détruite, on ne lui écrit plus. */
+    var burned: Boolean = false
 
     /** Les deux moitiés du double scan sont faites. */
     val ready: Boolean get() = ik != null && myBox != null && their != null
@@ -49,7 +53,7 @@ class AppState(
 /** Sérialisation binaire de l'état. Le chiffrement au repos est fait par l'appli (Keystore). */
 internal object StateCodec {
     private const val MAGIC = 0x50524E44 // "PRND"
-    private const val VERSION = 1
+    private const val VERSION = 2 // v2 : indicateur « bouton rouge » par contact
 
     fun encode(s: AppState): ByteArray {
         val bos = ByteArrayOutputStream()
@@ -65,9 +69,10 @@ internal object StateCodec {
     fun decode(data: ByteArray): AppState {
         DataInputStream(ByteArrayInputStream(data)).use { i ->
             require(i.readInt() == MAGIC) { "état illisible" }
-            require(i.readInt() == VERSION) { "version d'état inconnue" }
+            val version = i.readInt()
+            require(version in 1..VERSION) { "version d'état inconnue" }
             val s = AppState(i.bytes(), i.bytes(), i.relay())
-            repeat(i.readInt()) { val c = i.contact(); s.contacts[c.name] = c }
+            repeat(i.readInt()) { val c = i.contact(version); s.contacts[c.name] = c }
             return s
         }
     }
@@ -120,9 +125,10 @@ internal object StateCodec {
             bytes(m.id); writeBoolean(m.outgoing); writeLong(m.ts); bytes(m.text.toByteArray()); writeInt(m.status.ordinal)
         }
         writeInt(c.pendingFromUnknown)
+        writeBoolean(c.burned)
     }
 
-    private fun DataInputStream.contact(): Contact {
+    private fun DataInputStream.contact(version: Int): Contact {
         val c = Contact(readUTF())
         c.ik = opt(); c.xk = opt()
         if (readBoolean()) c.myBox = MyBox(relay(), bytes(), bytes(), bytes(), readLong())
@@ -135,6 +141,7 @@ internal object StateCodec {
             )
         }
         c.pendingFromUnknown = readInt()
+        if (version >= 2) c.burned = readBoolean()
         return c
     }
 }

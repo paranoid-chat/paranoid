@@ -42,6 +42,7 @@ type Contact struct {
 	Their   *TheirBox `json:"their,omitempty"`
 	Seen    []string  `json:"seen,omitempty"` // identifiants de messages récents (anti-doublon)
 	Session *Session  `json:"session,omitempty"`
+	Burned  bool      `json:"burned,omitempty"` // le contact a utilisé le bouton rouge
 }
 
 // ensureSession prépare l'environnement du ratchet et crée la session si besoin.
