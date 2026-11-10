@@ -36,6 +36,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -72,6 +73,9 @@ import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.paranoid.core.MessageStatus
@@ -206,7 +210,12 @@ fun SetupScreen(ui: Ui, vm: MainViewModel) {
 @Composable
 fun ContactsScreen(ui: Ui, vm: MainViewModel) {
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Paranoid") }) },
+        topBar = {
+            TopAppBar(
+                title = { Text("Paranoid") },
+                actions = { IconButton(onClick = vm::lock) { Icon(Icons.Default.Lock, "Verrouiller") } },
+            )
+        },
         floatingActionButton = {
             FloatingActionButton(onClick = vm::goAdd, modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)) {
                 Icon(Icons.Default.Add, "Ajouter un contact")
@@ -225,6 +234,7 @@ fun ContactsScreen(ui: Ui, vm: MainViewModel) {
             LazyColumn(Modifier.fillMaxSize()) {
                 items(ui.contacts, key = { it.name }) { c ->
                     val sub = when {
+                        c.burned -> "A utilisé le bouton rouge"
                         c.pendingFromUnknown > 0 -> "${c.pendingFromUnknown} message(s) en attente : scanne son QR"
                         !c.inviteScanned -> "QR pas encore scanné"
                         !c.inviteShown -> "Ton QR n'a pas encore été montré"
@@ -350,6 +360,20 @@ fun ChatScreen(name: String, ui: Ui, vm: MainViewModel) {
             )
         },
         bottomBar = {
+            if (row?.burned == true) {
+                Surface(color = MaterialTheme.colorScheme.errorContainer) {
+                    Column(
+                        Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars).padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            "$name a utilisé le bouton rouge : sa clé privée est détruite et il ne peut plus lire cette conversation. Pense à la supprimer.",
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                        Button(onClick = { confirm = "remove" }, modifier = Modifier.fillMaxWidth()) { Text("Supprimer la conversation") }
+                    }
+                }
+            } else {
             Surface(tonalElevation = 3.dp) {
                 Row(
                     Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars)).padding(8.dp),
@@ -374,12 +398,13 @@ fun ChatScreen(name: String, ui: Ui, vm: MainViewModel) {
                     ) { Icon(Icons.AutoMirrored.Filled.Send, "Envoyer") }
                 }
             }
+            }
         },
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
             ConnectionBanner(ui)
             LazyColumn(Modifier.fillMaxSize().padding(horizontal = 8.dp), state = list) {
-                items(ui.chat, key = { it.key }) { m -> Bubble(m) }
+                items(ui.chat, key = { it.key }) { m -> Bubble(m, name) }
             }
         }
     }
@@ -402,7 +427,23 @@ fun ChatScreen(name: String, ui: Ui, vm: MainViewModel) {
 }
 
 @Composable
-private fun Bubble(m: MessageRow) {
+private fun Bubble(m: MessageRow, name: String) {
+    if (m.status == MessageStatus.ALERT) {
+        Surface(
+            color = MaterialTheme.colorScheme.errorContainer,
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        ) {
+            Column(Modifier.padding(12.dp)) {
+                Text("$name a utilisé le bouton rouge", style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer)
+                Text("Sa clé privée est détruite : il ne pourra plus consulter cette conversation. Pense à supprimer tes conversations avec $name.",
+                    color = MaterialTheme.colorScheme.onErrorContainer)
+                Text(fmt(m.ts), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onErrorContainer)
+            }
+        }
+        return
+    }
     val mine = m.outgoing
     Box(Modifier.fillMaxWidth().padding(vertical = 3.dp), contentAlignment = if (mine) Alignment.CenterEnd else Alignment.CenterStart) {
         Surface(
@@ -422,4 +463,73 @@ private fun Bubble(m: MessageRow) {
             }
         }
     }
+}
+
+
+// ---------- codes et verrouillage ----------
+
+@Composable
+private fun CodeField(value: String, onChange: (String) -> Unit, label: String, onDone: (() -> Unit)? = null) {
+    OutlinedTextField(
+        value, onChange, label = { Text(label) }, singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
+        // Type « mot de passe » : le clavier n'apprend pas et ne suggère rien.
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
+        keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { onDone?.invoke() }),
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+@Composable
+fun SetCodesScreen(migrating: Boolean, ui: Ui, vm: MainViewModel) {
+    var u1 by remember { mutableStateOf("") }
+    var u2 by remember { mutableStateOf("") }
+    var d1 by remember { mutableStateOf("") }
+    var d2 by remember { mutableStateOf("") }
+    Surface(Modifier.fillMaxSize()) {
+        Column(
+            Modifier.verticalScroll(rememberScrollState()).windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars)).padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Spacer(Modifier.height(32.dp))
+            Text("Tes deux codes", style = MaterialTheme.typography.headlineSmall)
+            if (migrating) Text("Nouvelle version : Paranoid est désormais protégé par un code.")
+            Text("Code de déverrouillage : ouvre l'appli. Au moins ${vm.minCode} caractères.")
+            CodeField(u1, { u1 = it }, "Code de déverrouillage")
+            CodeField(u2, { u2 = it }, "Confirme le code de déverrouillage")
+            HorizontalDivider()
+            Text("Code de destruction (bouton rouge) : à la place du code normal, il alerte tous tes contacts, " +
+                "détruit ta clé privée et efface tout. L'appli paraît alors vierge. Irréversible.",
+                color = MaterialTheme.colorScheme.error)
+            CodeField(d1, { d1 = it }, "Code de destruction")
+            CodeField(d2, { d2 = it }, "Confirme le code de destruction")
+            Button(onClick = { vm.setCodes(u1, u2, d1, d2) }, enabled = !ui.busy, modifier = Modifier.fillMaxWidth()) {
+                Text(if (ui.busy) "Chiffrement…" else "Enregistrer")
+            }
+            Text("Aucun moyen de récupérer un code oublié : sans lui, l'identité et les conversations sont perdues.",
+                style = MaterialTheme.typography.bodySmall)
+        }
+    }
+    Messages(ui, vm)
+}
+
+@Composable
+fun LockScreen(ui: Ui, vm: MainViewModel) {
+    var code by remember { mutableStateOf("") }
+    val submit = { if (code.isNotEmpty() && !ui.busy) { vm.unlock(code); code = "" } }
+    Surface(Modifier.fillMaxSize()) {
+        Column(
+            Modifier.verticalScroll(rememberScrollState()).windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars)).padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Spacer(Modifier.height(48.dp))
+            Image(painterResource(R.drawable.logo), contentDescription = "Paranoid", modifier = Modifier.widthIn(max = 220.dp))
+            CodeField(code, { code = it }, "Code", onDone = submit)
+            Button(onClick = submit, enabled = code.isNotEmpty() && !ui.busy, modifier = Modifier.fillMaxWidth()) {
+                Text(if (ui.busy) "Vérification…" else "Déverrouiller")
+            }
+        }
+    }
+    Messages(ui, vm)
 }

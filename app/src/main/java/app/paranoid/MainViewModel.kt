@@ -3,7 +3,9 @@ package app.paranoid
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import app.paranoid.core.AppState
 import app.paranoid.core.Contact
+import app.paranoid.core.LockBox
 import app.paranoid.core.MAX_TEXT
 import app.paranoid.core.MessageStatus
 import app.paranoid.core.Messenger
@@ -12,6 +14,8 @@ import app.paranoid.core.b64
 import app.paranoid.core.parseFingerprint
 import app.paranoid.core.safetyNumber
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,6 +27,8 @@ import kotlinx.coroutines.withContext
 sealed interface Screen {
     data object Loading : Screen
     data object Setup : Screen
+    data class SetCodes(val migrating: Boolean) : Screen
+    data object Locked : Screen
     data object Contacts : Screen
     data object AddContact : Screen
     data class Chat(val name: String) : Screen
@@ -38,6 +44,7 @@ data class ContactRow(
     val lastText: String?,
     val lastTs: Long,
     val pendingFromUnknown: Int,
+    val burned: Boolean,
 )
 
 data class MessageRow(val key: String, val outgoing: Boolean, val text: String, val ts: Long, val status: MessageStatus)
@@ -61,13 +68,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val store = StateStore(app)
     private var messenger: Messenger? = null
 
+    /** État en attente des codes (nouvelle identité ou migration depuis la v0.1). */
+    private var pending: AppState? = null
+    private var duressJob: Job? = null
+    private var autoLockJob: Job? = null
+
     private val _ui = MutableStateFlow(Ui())
     val ui: StateFlow<Ui> = _ui
 
     val maxText = MAX_TEXT
+    val minCode = LockBox.MIN_CODE_LENGTH
 
     /** Enregistre l'état chiffré puis met l'affichage à jour (appelé par le Messenger, sous son verrou). */
-    private fun persist(s: app.paranoid.core.AppState) {
+    private fun persist(s: AppState) {
         store.save(s)
         refresh()
     }
@@ -75,12 +88,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     init {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val s = store.load()
-                if (s == null) {
-                    _ui.update { it.copy(screen = Screen.Setup) }
-                } else {
-                    messenger = Messenger(s, ::persist)
-                    refresh(Screen.Contacts)
+                when (store.status()) {
+                    StateStore.Status.EMPTY -> _ui.update { it.copy(screen = Screen.Setup) }
+                    StateStore.Status.LOCKED -> _ui.update { it.copy(screen = Screen.Locked) }
+                    StateStore.Status.LEGACY -> {
+                        pending = store.openLegacy()
+                        _ui.update { it.copy(screen = Screen.SetCodes(migrating = true)) }
+                    }
                 }
             } catch (e: Exception) {
                 _ui.update { it.copy(screen = Screen.Fatal(e.message ?: e.toString())) }
@@ -99,12 +113,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         lastText = c.messages.lastOrNull()?.text,
         lastTs = c.messages.lastOrNull()?.ts ?: 0,
         pendingFromUnknown = c.pendingFromUnknown,
+        burned = c.burned,
     )
 
     /** Recalcule l'affichage à partir de l'état (sous le verrou du Messenger). */
     private fun refresh(screen: Screen? = null) {
         val m = messenger ?: return
         synchronized(m) {
+            if (messenger !== m) return
             val contacts = m.state.contacts.values.map(::rows).sortedByDescending { it.lastTs }
             // L'écran courant est lu dans update (atomique) : une relève en cours ne peut pas
             // ramener un écran que l'utilisateur vient de quitter.
@@ -145,7 +161,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun openChat(name: String) = viewModelScope.launch(Dispatchers.IO) {
         val c = messenger?.state?.contacts?.get(name)
-        if (c != null && !c.ready) {
+        if (c != null && !c.ready && !c.burned) {
             // Échange de QR inachevé : on reprend là où il en était.
             _ui.update { it.copy(screen = Screen.AddContact, add = AddFlow(name, null), error = null, info = null) }
             if (c.myBox != null) createInvite(name)
@@ -156,16 +172,84 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun dismissMessages() = _ui.update { it.copy(error = null, info = null) }
 
-    // ---------- actions ----------
+    // ---------- identité et codes ----------
 
     fun setup(url: String, fp: String) = action {
+        duressJob?.join() // un effacement en cours doit être terminé avant toute nouvelle identité
         val relay = RelayRef(url.trim().trimEnd('/'), parseFingerprint(fp))
         require(relay.url.startsWith("https://")) { "l'adresse du relais doit commencer par https://" }
-        val s = Messenger.createIdentity(relay)
-        store.save(s)
+        pending = Messenger.createIdentity(relay)
+        store.beginNew()
+        _ui.update { it.copy(screen = Screen.SetCodes(migrating = false)) }
+    }
+
+    fun setCodes(unlock: String, unlockAgain: String, duress: String, duressAgain: String) = action {
+        require(unlock == unlockAgain) { "les deux saisies du code de déverrouillage diffèrent" }
+        require(duress == duressAgain) { "les deux saisies du code de destruction diffèrent" }
+        LockBox.validateCodes(unlock, duress)
+        val s = pending ?: error("aucune identité en attente")
+        store.setCodes(s, unlock, duress)
+        pending = null
         messenger = Messenger(s, ::persist)
         refresh(Screen.Contacts)
     }
+
+    fun unlock(code: String) = action {
+        when (val r = store.unlock(code)) {
+            StateStore.UnlockResult.Unlocked -> {
+                messenger = Messenger(store.load(), ::persist)
+                refresh(Screen.Contacts)
+            }
+            StateStore.UnlockResult.Duress -> redButton()
+            is StateStore.UnlockResult.Wrong ->
+                error(if (r.waitSeconds > 0) "Code incorrect. Prochain essai dans ${r.waitSeconds} s." else "Code incorrect.")
+            is StateStore.UnlockResult.Throttled -> error("Trop d'essais. Réessaie dans ${r.waitSeconds} s.")
+        }
+    }
+
+    /**
+     * Code de destruction. L'écran ressemble aussitôt à une appli vierge. Puis, sans interruption
+     * possible : état chargé en mémoire, clé Keystore et coffre détruits (plus rien n'est
+     * déchiffrable sur le disque), alertes envoyées depuis la mémoire (5 s maximum), effacement
+     * du reste.
+     */
+    private fun redButton() {
+        _ui.value = Ui(screen = Screen.Setup)
+        duressJob = viewModelScope.launch(Dispatchers.IO + NonCancellable) {
+            val state = runCatching { store.load() }.getOrNull()
+            store.wipe()
+            if (state != null) runCatching { Messenger(state, persist = {}).sendAlerts(5_000) }
+            state?.identitySeed?.fill(0)
+            state?.x25519Priv?.fill(0)
+        }
+    }
+
+    /** Verrouille : la clé de données et l'état déchiffré sont oubliés. */
+    fun lock() {
+        autoLockJob?.cancel()
+        val m = messenger ?: return
+        synchronized(m) {
+            messenger = null
+            store.lock()
+        }
+        _ui.value = Ui(screen = Screen.Locked)
+    }
+
+    /** Verrouillage automatique après 60 s en arrière-plan (scanner QR et partage compris). */
+    fun onAppBackground() {
+        if (messenger == null) return
+        autoLockJob?.cancel()
+        autoLockJob = viewModelScope.launch {
+            delay(60_000)
+            lock()
+        }
+    }
+
+    fun onAppForeground() {
+        autoLockJob?.cancel()
+    }
+
+    // ---------- messagerie ----------
 
     fun createInvite(name: String) = action {
         val m = messenger ?: return@action
@@ -211,6 +295,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun wipeAll() = viewModelScope.launch(Dispatchers.IO) {
         store.wipe()
         messenger = null
+        pending = null
         _ui.value = Ui(screen = Screen.Setup)
     }
 
@@ -222,6 +307,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val ok = withContext(Dispatchers.IO) { pollOnce() }
             delay(if (ok) 5_000 else 15_000)
         }
+    }
+
+    /** Relève immédiate (réveil par une notification UnifiedPush). */
+    fun pollNow() {
+        viewModelScope.launch(Dispatchers.IO) { pollOnce() }
     }
 
     private fun pollOnce(): Boolean {

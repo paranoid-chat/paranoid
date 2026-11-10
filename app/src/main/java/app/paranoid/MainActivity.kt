@@ -23,6 +23,16 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     private val vm: MainViewModel by viewModels()
 
+    override fun onStart() {
+        super.onStart()
+        vm.onAppForeground()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        vm.onAppBackground()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Pas de capture d'écran, pas d'aperçu dans les applis récentes.
@@ -41,6 +51,8 @@ class MainActivity : ComponentActivity() {
                 when (val s = ui.screen) {
                     Screen.Loading -> LoadingScreen()
                     Screen.Setup -> SetupScreen(ui, vm)
+                    is Screen.SetCodes -> SetCodesScreen(s.migrating, ui, vm)
+                    Screen.Locked -> LockScreen(ui, vm)
                     Screen.Contacts -> ContactsScreen(ui, vm)
                     Screen.AddContact -> AddContactScreen(ui, vm)
                     is Screen.Chat -> ChatScreen(s.name, ui, vm)

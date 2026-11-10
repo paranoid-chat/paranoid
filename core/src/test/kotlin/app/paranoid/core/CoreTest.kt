@@ -263,3 +263,54 @@ class DoubleRatchetTest {
         expect<IllegalArgumentException> { encodeInner(Plain(TYPE_TEXT, randomBytes(16), 0, ByteArray(MAX_TEXT + 1))) }
     }
 }
+
+class LockBoxTest {
+    private val fast = LockBox.Params(memoryKiB = 1024, iterations = 1)
+
+    @Test
+    fun opensWithBothCodesAndTellsThemApart() {
+        val dek = randomBytes(32)
+        repeat(4) {
+            val box = LockBox.create(dek, "123456", "654321", fast)
+            val u = LockBox.open(box, "123456") as LockBox.Result.Opened
+            assertEquals(LockBox.Role.UNLOCK, u.role)
+            assertArrayEquals(dek, u.dataKey)
+            val d = LockBox.open(box, "654321") as LockBox.Result.Opened
+            assertEquals(LockBox.Role.DURESS, d.role)
+            assertArrayEquals(dek, d.dataKey)
+            assertTrue(LockBox.open(box, "000000") is LockBox.Result.Wrong)
+            assertTrue(LockBox.open(box, "") is LockBox.Result.Wrong)
+        }
+    }
+
+    @Test
+    fun rejectsBadCodes() {
+        expect<IllegalArgumentException> { LockBox.create(randomBytes(32), "12345", "654321", fast) }
+        expect<IllegalArgumentException> { LockBox.create(randomBytes(32), "123456", "123456", fast) }
+    }
+
+    @Test
+    fun tamperedBoxDoesNotOpen() {
+        val box = LockBox.create(randomBytes(32), "123456", "654321", fast)
+        val bad = box.copyOf(); bad[bad.size - 1] = (bad[bad.size - 1].toInt() xor 1).toByte()
+        assertTrue(LockBox.open(bad, "123456") is LockBox.Result.Wrong || LockBox.open(bad, "654321") is LockBox.Result.Wrong)
+    }
+
+    @Test
+    fun throttle() {
+        assertEquals(0L, LockThrottle.delaySeconds(4))
+        assertEquals(30L, LockThrottle.delaySeconds(5))
+        assertEquals(60L, LockThrottle.delaySeconds(6))
+        assertEquals(3600L, LockThrottle.delaySeconds(40))
+    }
+
+    @Test
+    fun defaultParamsTiming() {
+        val t0 = System.nanoTime()
+        val box = LockBox.create(randomBytes(32), "123456", "654321")
+        val t1 = System.nanoTime()
+        LockBox.open(box, "123456")
+        val t2 = System.nanoTime()
+        println("Argon2id 64 Mio x3 : création ${(t1 - t0) / 1_000_000} ms, ouverture ${(t2 - t1) / 1_000_000} ms (JVM)")
+    }
+}
