@@ -82,5 +82,5 @@ dependencies {
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
 
     // Notifications sans Google : UnifiedPush (distributeur au choix, ntfy par défaut).
-    implementation("org.unifiedpush.android:connector:3.0.+")
+    implementation("org.unifiedpush.android:connector:3.0.10")
 }

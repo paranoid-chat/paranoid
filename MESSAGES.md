@@ -44,6 +44,10 @@ Le double scan donne à chacun les clés statiques de l'autre, vérifiées en fa
 
 Contenu clair (1990 octets) : type (1) ‖ identifiant aléatoire (16) ‖ horodatage de l'expéditeur (8) ‖ longueur (2) ‖ texte UTF-8, puis zéros. Le texte fait **1963 octets** au maximum.
 
+Types :
+- **1 — texte.**
+- **2 — alerte « bouton rouge »** (corps vide). L'expéditeur a saisi son code de destruction : sa clé privée est détruite. Le destinataire marque le contact comme « brûlé », affiche « X a utilisé le bouton rouge et ne pourra plus consulter cette conversation », et n'envoie plus rien à ce contact. L'alerte passe par le ratchet comme un message ordinaire : le relais ne la distingue pas d'un texte.
+
 ### Règles de robustesse
 
 - **Pas de modification sur échec** : la réception travaille sur une copie de la session, qui n'est conservée que si le déchiffrement réussit. Un bloc forgé ou altéré ne désynchronise rien.

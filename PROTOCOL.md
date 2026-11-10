@@ -95,6 +95,33 @@ Le QR est **propre à un contact** : avant de l'afficher, le téléphone crée u
 
 Échange v1 : double scan (A scanne B, puis B scanne A). Chaque QR doit être affiché avec `FLAG_SECURE`.
 
+## 6 bis. Notifications (UnifiedPush / Web Push)
+
+Facultatif. Le relais réveille le téléphone après chaque dépôt, sans rien révéler du message.
+
+### Clé VAPID du relais
+`GET /v1/push/vapid` → 200, 65 octets (clé publique P-256 non compressée), ou 404 si les notifications sont désactivées. Le téléphone la transmet à son distributeur UnifiedPush (RFC 8292).
+
+### Enregistrer le point de notification d'une boîte
+`PUT /v1/box/{box_id}/push`, authentifié (§4, le corps est couvert par la signature).
+- Corps : longueur de l'URL (2 octets, big-endian) ‖ URL (≤ 512 octets, https) ‖ `p256dh` (65 octets) ‖ `auth` (16 octets).
+- Réponse 204. 400 si l'URL ou les clés sont invalides, 501 si les notifications sont désactivées.
+
+`DELETE /v1/box/{box_id}/push`, authentifié → 204.
+
+### Envoi
+Après chaque dépôt réussi dans une boîte qui a un point de notification :
+- `POST` vers l'URL, corps chiffré RFC 8291 (`Content-Encoding: aes128gcm`, un enregistrement, clair = 1 octet `0x01`) ;
+- `Authorization: vapid t=<JWT ES256>, k=<clé VAPID>` (RFC 8292), `TTL: 86400`, `Urgency: high` ;
+- au plus un réveil par boîte toutes les 2 s, sans nouvelle tentative, sans attendre la réponse avant de répondre au dépôt.
+
+Le relais refuse de contacter les adresses privées, locales ou CGNAT (protection SSRF, contrôlée après résolution DNS) sauf option `--push-allow-private`, et ne suit pas les redirections.
+
+### Ce que voit chaque acteur
+- **Relais** : l'URL de notification de chaque boîte (donc quel distributeur et quel « topic » réveillent quel appareil).
+- **Service de notification** (ntfy…) : l'IP du relais et l'heure des réveils ; le contenu est chiffré et vide de sens.
+- **Personne** ne voit l'expéditeur ni le message.
+
 ## 7. Journalisation du relais
 
 Aucun journal d'accès applicatif. Pas de stockage d'adresses IP au-delà de la mémoire nécessaire à la limitation de débit.
@@ -102,7 +129,6 @@ Aucun journal d'accès applicatif. Pas de stockage d'adresses IP au-delà de la 
 ## 8. Points ouverts
 
 - Choix du protocole de messagerie (ratchet) : décidé au client CLI.
-- Réveil en arrière-plan : foreground service ou UnifiedPush.
 - Preuve de travail ou jeton pour la création de boîtes.
 - Envoi redondant vers plusieurs relais et détection des pertes.
 - Secret à usage unique pour remplacer le double scan (v2).
