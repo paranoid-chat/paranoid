@@ -73,6 +73,7 @@ import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.foundation.text.KeyboardOptions
@@ -192,9 +193,13 @@ fun SetupScreen(ui: Ui, vm: MainViewModel) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Spacer(Modifier.height(32.dp))
-            Image(painterResource(R.drawable.logo), contentDescription = "Paranoid", modifier = Modifier.widthIn(max = 280.dp))
-            Text("Aucun compte : ton identité est une clé créée sur ce téléphone, et elle ne le quitte jamais.",
-                style = MaterialTheme.typography.bodyMedium)
+            Image(painterResource(R.drawable.logo), contentDescription = "Paranoid", modifier = Modifier.widthIn(max = 220.dp))
+            Text(
+                "Paranoid - The Chat app for the truly paranoids",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary,
+                textAlign = TextAlign.Center,
+            )
             OutlinedTextField(url, { url = it }, label = { Text("Relais") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(fp, { fp = it }, label = { Text("Empreinte SHA-256 du relais") },
                 textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), modifier = Modifier.fillMaxWidth())
@@ -504,15 +509,14 @@ fun SetCodesScreen(migrating: Boolean, ui: Ui, vm: MainViewModel) {
             CodeField(u2, { u2 = it }, "Confirme le code de déverrouillage")
             HorizontalDivider()
             Text("Code de destruction (bouton rouge) : à la place du code normal, il alerte tous tes contacts, " +
-                "détruit ta clé privée et efface tout. L'appli paraît alors vierge. Irréversible.",
+                "détruit ta clé privée et efface tout.",
                 color = MaterialTheme.colorScheme.error)
             CodeField(d1, { d1 = it }, "Code de destruction")
             CodeField(d2, { d2 = it }, "Confirme le code de destruction")
             Button(onClick = { vm.setCodes(u1, u2, d1, d2) }, enabled = !ui.busy, modifier = Modifier.fillMaxWidth()) {
                 Text(if (ui.busy) "Chiffrement…" else "Enregistrer")
             }
-            Text("Aucun moyen de récupérer un code oublié : sans lui, l'identité et les conversations sont perdues.",
-                style = MaterialTheme.typography.bodySmall)
+            Text("Aucun moyen de récupérer un code oublié.", style = MaterialTheme.typography.bodySmall)
         }
     }
     Messages(ui, vm)

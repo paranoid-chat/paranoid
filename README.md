@@ -1,4 +1,4 @@
-# Paranoid (Android) — v0.3
+# Paranoid (Android) — v0.3.1
 
 Messagerie sans compte : l'identité est une paire de clés créée sur le téléphone. Les contacts s'ajoutent par échange de QR en face à face, et les messages passent par un relais interchangeable qui ne voit que des blocs chiffrés (voir `PROTOCOL.md` et `MESSAGES.md` dans le dépôt du relais).
 
@@ -21,9 +21,10 @@ Messagerie sans compte : l'identité est une paire de clés créée sur le tél�
   3. depuis la mémoire, l'alerte « X a utilisé le bouton rouge » part chez tous les contacts (5 s maximum) ;
   4. tout est effacé.
   Chez le destinataire, la conversation affiche l'alerte et n'accepte plus d'envoi.
-- **Notifications UnifiedPush** (ntfy par défaut, sans Google) : le relais envoie un réveil chiffré vide.
-  - Appli déverrouillée : relève immédiate.
-  - Sinon : notification générique « Nouveau message », sans expéditeur ni texte.
+- **Messages en attente** : sans notification, les messages attendent sur le relais (jusqu'à 7 jours, 100 au maximum par contact) et arrivent dès que l'appli est déverrouillée.
+- **Notifications (facultatives)** : uniquement si un distributeur UnifiedPush (ntfy…) est déjà installé sur le téléphone. Sinon, l'appli ne demande rien. Le réveil envoyé par le relais est chiffré et vide :
+  - appli déverrouillée : relève immédiate ;
+  - sinon : notification générique « Nouveau message », sans expéditeur ni texte.
 - **Sécurité locale** :
   - état chiffré par une clé de données, dans un coffre à deux codes, lui-même chiffré par une clé non exportable du Keystore (StrongBox si disponible) ;
   - `FLAG_SECURE` ;
@@ -141,7 +142,7 @@ Le relais de la v0.3 ajoute les notifications. Il faut donc le mettre à jour.
    - cadenas en haut de la liste des contacts, puis déverrouillage avec le code ;
    - 5 mauvais codes doivent déclencher la temporisation ;
    - en arrière-plan plus de 60 s, l'appli doit se reverrouiller.
-3. **Notifications** :
+3. **Notifications** (facultatif) :
    - installe **ntfy** sur le téléphone (F-Droid ou Play Store, serveur `ntfy.sh` par défaut) ;
    - ouvre Paranoid déverrouillé : accepte les notifications et choisis ntfy. La liste des contacts doit afficher « Notifications actives » ;
    - mets l'appli en arrière-plan ou verrouille-la, puis envoie un message depuis le PC (`& $C -d pc send tel "test"`) : la notification « Nouveau message » doit arriver en quelques secondes.
@@ -153,6 +154,70 @@ Le relais de la v0.3 ajoute les notifications. Il faut donc le mettre à jour.
 
 `ntfy.sh` (public) voit l'adresse IP du relais et l'heure des réveils, jamais leur contenu. Pour l'auto-héberger plus tard : un service ntfy en HTTPS (avec `base-url` et `upstream-base-url`), dont l'adresse se règle dans l'appli ntfy du téléphone.
 
+## Tester depuis le PC avec le téléphone (phase de développement)
+
+La boucle de travail : un push sur `main`, la CI compile, puis tu récupères l'APK sur le PC, tu l'installes sur le téléphone et tu testes contre `relaycli`. Le PC joue le rôle du second téléphone.
+
+### Outils (une fois, PowerShell)
+
+```powershell
+winget install GitHub.cli Google.PlatformTools
+gh auth login                      # compte GitHub qui a accès au dépôt
+```
+
+Ferme puis rouvre PowerShell pour que `gh` et `adb` soient dans le PATH.
+
+### Relier le téléphone à adb
+
+**Par USB :** options de développement, puis *Débogage USB*. Branche le téléphone, accepte l'empreinte du PC, puis vérifie avec `adb devices`.
+
+**En Wi-Fi (sans câble) :**
+1. Dans les options de développement, ouvre *Débogage sans fil*, puis *Associer l'appareil avec un code*.
+2. Sur le PC :
+   ```powershell
+   adb pair 192.168.1.X:PORT_ASSOCIATION    # saisir le code affiché
+   adb connect 192.168.1.X:PORT_DEBOGAGE    # port affiché sur l'écran « Débogage sans fil »
+   adb devices
+   ```
+
+### Installer la dernière version
+
+Depuis le dossier du dépôt cloné, ou en copiant le dossier `tools` :
+
+```powershell
+.\tools\dernier-apk.ps1        # télécharge l'APK de la dernière compilation réussie, vérifie la somme, installe
+.\tools\dernier-relaycli.ps1   # met à jour .\relaycli.exe
+$C = ".\relaycli.exe"
+```
+
+`adb install -r` met l'appli à jour **sans perdre ses données**, puisque la signature et l'identité sont les mêmes. Pour repartir de zéro côté téléphone : `adb shell pm clear app.paranoid`, qui efface aussi la clé Keystore de l'appli.
+
+### Suivre l'appli pendant un test
+
+```powershell
+adb logcat --pid=$(adb shell pidof -s app.paranoid)
+```
+
+L'appli n'écrit jamais de secret dans les journaux. Les plantages, eux, y apparaissent (`FATAL EXCEPTION`). Côté relais (sur la VM) : `journalctl -u relay -f`.
+
+### Scénarios de test
+
+| # | Scénario | Attendu |
+|---|---|---|
+| 1 | Appairage : téléphone *+* → *Afficher mon QR* → *Partager* ; PC `Get-Clipboard \| & $C -d pc add tel -` ; PC `& $C -d pc invite --qr tel` ; téléphone *Scanner son QR* | Les empreintes concordent des deux côtés |
+| 2 | `& $C -d pc chat tel`, puis messages dans les deux sens | Arrivée en moins de 5 s |
+| 3 | Téléphone verrouillé, puis le PC envoie 3 messages, puis déverrouillage | Les 3 messages arrivent, dans l'ordre |
+| 4 | Le téléphone envoie avec le relais arrêté (`systemctl stop relay`) | Message marqué « échec », l'appli reste utilisable |
+| 5 | 5 mauvais codes | Temporisation de 30 s |
+| 6 | Appli en arrière-plan plus de 60 s | Reverrouillée au retour |
+| 7 | Mise à jour (`dernier-apk.ps1`) | Identité et conversations conservées |
+| 8 | Code de destruction sur le téléphone, pendant le `chat` PC | Téléphone : écran d'identité vierge. PC : alerte, puis envoi refusé |
+| 9 | `& $C -d pc panic --oui` | Téléphone : alerte dans la conversation, saisie remplacée par « Supprimer » |
+
+Après les scénarios 8 et 9, refais l'appairage. Côté PC : `& $C -d pc remove tel` (ou supprime le dossier `pc`) ; côté téléphone : supprime le contact.
+
+En cas d'échec de déchiffrement, garde la ligne « rejeté » de `relaycli` (elle contient le type de chaîne et les numéros) et la sortie de `& $C -d pc debug tel`.
+
 ## En cas de problème
 
 | Symptôme | Cause probable |
@@ -161,6 +226,5 @@ Le relais de la v0.3 ajoute les notifications. Il faut donc le mettre à jour.
 | « empreinte du relais inattendue » | L'empreinte saisie ne correspond pas au certificat du relais. |
 | Messages « rejetés » ou qui ne passent plus | Session désynchronisée : *Réinitialiser la session* des deux côtés (`relaycli reset tel` côté PC). |
 | « Données illisibles » au démarrage | La clé Keystore a disparu (appli réinstallée sans ses données, par exemple). L'identité est perdue, c'est voulu. |
-| « Notifications inactives : installe ntfy » | Aucun distributeur UnifiedPush sur le téléphone. |
-| « Notifications : non proposées par ce relais » | Le relais n'a pas été mis à jour (v0.3), ou il tourne avec `--push=false`. |
+| Aucune mention « Notifications actives » | Pas de distributeur UnifiedPush sur le téléphone (c'est normal), ou relais pas encore en v0.3. |
 | Pas de notification alors que « Notifications actives » | Le relais ne joint pas le service de notification : regarde `journalctl -u relay`, et vérifie l'option `--push-allow-private` si ntfy est sur le LAN. Vérifie aussi que l'optimisation de batterie de ntfy est désactivée. |

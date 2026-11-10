@@ -258,12 +258,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val m = messenger ?: return@launch
             val key = runCatching { m.vapidKey() }
             key.onSuccess { k ->
-                if (k == null) {
-                    _ui.update { it.copy(pushStatus = "Notifications : non proposées par ce relais") }
-                } else {
-                    _pushVapid.value = b64(k)
-                    if (PushBus.endpoint.value == null && !Push.distributorAvailable(getApplication())) {
-                        _ui.update { it.copy(pushStatus = "Notifications inactives : installe ntfy (F-Droid ou Play Store)") }
+                if (k != null) {
+                    // Sans distributeur UnifiedPush sur le téléphone, on ne demande rien : les
+                    // messages attendent sur le relais et sont relevés au déverrouillage.
+                    if (PushBus.endpoint.value != null || Push.distributorAvailable(getApplication())) {
+                        _pushVapid.value = b64(k)
                     }
                 }
             }
@@ -273,7 +272,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Réponse de l'activité après le choix du distributeur. */
     fun onPushDistributor(ok: Boolean) {
-        if (!ok) _ui.update { it.copy(pushStatus = "Notifications inactives : installe ntfy (F-Droid ou Play Store)") }
+        if (!ok) _ui.update { it.copy(pushStatus = null) }
     }
 
     /** Enregistre le point de notification courant sur toutes les boîtes (si déverrouillé). */
