@@ -16,8 +16,8 @@ android {
         applicationId = "app.paranoid"
         minSdk = 33
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1"
         // Relais de développement (LAN). L'empreinte est publique : ce n'est pas un secret.
         buildConfigField("String", "DEFAULT_RELAY_URL", "\"https://192.168.1.252:8443\"")
         buildConfigField(

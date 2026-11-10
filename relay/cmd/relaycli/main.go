@@ -32,10 +32,11 @@ func usage() {
 Commandes :
   init --relay URL --fp EMPREINTE   crée une identité et teste le relais
   whoami                            affiche ton empreinte de sécurité et ton relais
-  invite NOM                        crée une boîte pour NOM et affiche ton invitation
-  add NOM INVITATION                enregistre le contact NOM à partir de son invitation
+  invite [--qr] [--png F] NOM       crée une boîte pour NOM et affiche ton invitation (QR possible)
+  add NOM INVITATION|-              enregistre le contact NOM (« - » : invitation lue sur l'entrée)
   send NOM TEXTE…                   envoie un message à NOM
   recv                              relève, affiche et acquitte les messages
+  chat NOM                          discussion en direct avec NOM (relève automatique)
   contacts                          liste les contacts
   remove NOM                        supprime le contact et sa boîte sur le relais
   reset NOM                         réinitialise la session chiffrée avec NOM (à faire des deux côtés)
@@ -71,6 +72,8 @@ func main() {
 		err = withState(*dir, func(s *State) error { return cmdSend(s, args[1:]) })
 	case "recv":
 		err = withState(*dir, cmdRecv)
+	case "chat":
+		err = withState(*dir, func(s *State) error { return cmdChat(s, args[1:]) })
 	case "contacts":
 		err = withState(*dir, cmdContacts)
 	case "remove":
@@ -171,10 +174,17 @@ func cmdWhoami(s *State) error {
 // ---------- invite / add ----------
 
 func cmdInvite(s *State, args []string) error {
-	if len(args) != 1 {
-		return errors.New("usage : invite NOM")
+	fs := flag.NewFlagSet("invite", flag.ContinueOnError)
+	showQR := fs.Bool("qr", false, "affiche le QR dans le terminal")
+	light := fs.Bool("light", false, "terminal à fond clair (avec --qr)")
+	png := fs.String("png", "", "enregistre le QR dans ce fichier PNG")
+	if err := fs.Parse(args); err != nil {
+		return err
 	}
-	name := args[0]
+	if fs.NArg() != 1 {
+		return errors.New("usage : invite [--qr] [--light] [--png FICHIER] NOM")
+	}
+	name := fs.Arg(0)
 	if err := checkName(name); err != nil {
 		return err
 	}
@@ -206,9 +216,22 @@ func cmdInvite(s *State, args []string) error {
 	if err != nil {
 		return err
 	}
+	if *showQR {
+		q, err := terminalQR(inv, !*light)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(os.Stderr, q)
+	}
+	if *png != "" {
+		if err := writeQRPNG(inv, *png); err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "QR enregistré dans %s\n", *png)
+	}
 	fmt.Fprintf(os.Stderr, "Invitation pour %s (à transmettre uniquement à %s) :\n", name, name)
 	fmt.Println(inv)
-	fmt.Fprintln(os.Stderr, "Astuce : relaycli … invite NOM | qrencode -t ansiutf8   pour l'afficher en QR.")
+	fmt.Fprintf(os.Stderr, "Ton empreinte de sécurité : %s\n", SafetyNumber(s.IK()))
 	return nil
 }
 
@@ -217,10 +240,17 @@ func cmdAdd(s *State, args []string) error {
 		return errors.New("usage : add NOM INVITATION")
 	}
 	name := args[0]
-	if err := checkName(name); err != nil {
+	var err error
+	if err = checkName(name); err != nil {
 		return err
 	}
-	inv, err := DecodeInvite(args[1])
+	raw := args[1]
+	if raw == "-" {
+		if raw, err = readAllStdin(); err != nil {
+			return err
+		}
+	}
+	inv, err := DecodeInvite(raw)
 	if err != nil {
 		return err
 	}
@@ -260,42 +290,46 @@ func cmdSend(s *State, args []string) error {
 	if len(args) < 2 {
 		return errors.New("usage : send NOM TEXTE…")
 	}
-	name := args[0]
+	seq, err := sendMessage(s, args[0], strings.Join(args[1:], " "))
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Envoyé à %s (n° %d sur le relais).\n", args[0], seq)
+	return nil
+}
+
+// sendMessage chiffre et dépose un message ; renvoie le numéro attribué par le relais.
+func sendMessage(s *State, name, msg string) (uint64, error) {
 	c := s.Contacts[name]
 	if c == nil || c.Their == nil || c.IK == nil {
-		return fmt.Errorf("contact %s inconnu : enregistre d'abord son invitation avec « add »", name)
+		return 0, fmt.Errorf("contact %s inconnu : enregistre d'abord son invitation avec « add »", name)
 	}
-	text := []byte(strings.Join(args[1:], " "))
+	text := []byte(msg)
 	if len(text) > MaxTextV2 {
-		return fmt.Errorf("message trop long (%d octets, max %d)", len(text), MaxTextV2)
+		return 0, fmt.Errorf("message trop long (%d octets, max %d)", len(text), MaxTextV2)
 	}
 	p := Plain{Type: TypeText, TS: time.Now().Unix(), Body: text}
 	if _, err := rand.Read(p.ID[:]); err != nil {
-		return err
+		return 0, err
 	}
 	e, err := s.ensureSession(c)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	inner, err := encodeInnerV2(p)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	blob, err := c.Session.Encrypt(e, inner)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	// La session est enregistrée avant le dépôt : une clé de message n'est jamais réutilisée,
 	// même si le dépôt échoue (le destinataire verra simplement un message manquant).
 	if err := s.Save(); err != nil {
-		return err
+		return 0, err
 	}
-	seq, err := NewRelayClient(c.Their.Relay).Deposit(c.Their.WriteID, blob)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("Envoyé à %s (n° %d sur le relais).\n", name, seq)
-	return nil
+	return NewRelayClient(c.Their.Relay).Deposit(c.Their.WriteID, blob)
 }
 
 func (c *Contact) seen(id string) bool {

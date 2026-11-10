@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.os.PersistableBundle
 import androidx.compose.foundation.Image
@@ -131,6 +132,15 @@ private fun copySensitive(ctx: Context, label: String, text: String) {
     val clip = ClipData.newPlainText(label, text)
     clip.description.extras = PersistableBundle().apply { putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true) }
     ctx.getSystemService(ClipboardManager::class.java).setPrimaryClip(clip)
+}
+
+/** Menu de partage Android : pour transmettre l'invitation à un PC sans caméra. */
+private fun shareInvite(ctx: Context, invite: String) {
+    val send = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, invite)
+    }
+    ctx.startActivity(Intent.createChooser(send, "Partager l'invitation"))
 }
 
 private val timeFmt = SimpleDateFormat("dd/MM HH:mm", Locale.FRANCE)
@@ -272,9 +282,18 @@ fun AddContactScreen(ui: Ui, vm: MainViewModel) {
                         filterQuality = FilterQuality.None, modifier = Modifier.size(280.dp))
                 }
                 Text("Mon empreinte : ${ui.mySafety}", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelMedium)
-                OutlinedButton(onClick = { copySensitive(ctx, "Invitation Paranoid", invite) }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Copier l'invitation (tests)")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(onClick = { copySensitive(ctx, "Invitation Paranoid", invite) }, modifier = Modifier.weight(1f)) {
+                        Text("Copier")
+                    }
+                    OutlinedButton(onClick = { shareInvite(ctx, invite) }, modifier = Modifier.weight(1f)) {
+                        Text("Partager")
+                    }
                 }
+                Text(
+                    "Sans caméra en face (PC), transmets l'invitation en texte, puis comparez vos empreintes.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
                 HorizontalDivider()
                 if (row?.inviteScanned == true) {
                     Text("3. QR de ${ui.add.name} scanné. Empreinte : ${row.safety}", fontFamily = FontFamily.Monospace)

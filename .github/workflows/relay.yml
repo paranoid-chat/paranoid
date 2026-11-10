@@ -46,6 +46,7 @@ jobs:
             GOOS=linux GOARCH=$arch go build -trimpath -ldflags "-s -w" -o dist/relayd-linux-$arch .
             GOOS=linux GOARCH=$arch go build -trimpath -ldflags "-s -w" -o dist/relaycli-linux-$arch ./cmd/relaycli
           done
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o dist/relaycli-windows-amd64.exe ./cmd/relaycli
           (cd dist && sha256sum * > SHA256SUMS)
 
       - uses: actions/upload-artifact@v4
