@@ -1,0 +1,175 @@
+package app.paranoid.core
+
+// Invitation = contenu du QR (PROTOCOL.md §6). Même format que le client Go :
+// base64url( {"v":1,"ik":"…","xk":"…","r":[{"u":"…","fp":"…","w":"…"}]} )
+
+class InviteRelay(val url: String, val fp: ByteArray, val writeId: ByteArray)
+
+class Invite(val ik: ByteArray, val xk: ByteArray, val relays: List<InviteRelay>) {
+    fun encode(): String {
+        val r = relays.joinToString(",") {
+            """{"u":${jsonString(it.url)},"fp":"${b64(it.fp)}","w":"${b64(it.writeId)}"}"""
+        }
+        val json = """{"v":1,"ik":"${b64(ik)}","xk":"${b64(xk)}","r":[$r]}"""
+        return b64(json.toByteArray(Charsets.UTF_8))
+    }
+
+    companion object {
+        fun decode(s: String): Invite {
+            val raw = try {
+                unb64(s.trim())
+            } catch (e: IllegalArgumentException) {
+                throw InviteException("invitation illisible (base64url attendu)")
+            }
+            val obj = try {
+                MiniJson.parse(raw.toString(Charsets.UTF_8)) as? Map<*, *>
+            } catch (e: Exception) {
+                null
+            } ?: throw InviteException("invitation illisible (JSON)")
+            val v = (obj["v"] as? Number)?.toInt()
+            if (v != 1) throw InviteException("version d'invitation $v non prise en charge")
+            val ik = obj.bytes("ik")
+            val xk = obj.bytes("xk")
+            if (ik?.size != 32 || xk?.size != 32) throw InviteException("invitation : clés invalides")
+            val list = obj["r"] as? List<*> ?: emptyList<Any>()
+            if (list.isEmpty() || list.size > 3) throw InviteException("invitation : 1 à 3 relais attendus")
+            val relays = list.map { e ->
+                val m = e as? Map<*, *> ?: throw InviteException("invitation : relais invalide")
+                val u = m["u"] as? String
+                val fp = m.bytes("fp")
+                val w = m.bytes("w")
+                if (u == null || !u.startsWith("https://") || fp?.size != 32 || w?.size != 16) {
+                    throw InviteException("invitation : relais invalide")
+                }
+                InviteRelay(u, fp, w)
+            }
+            return Invite(ik, xk, relays)
+        }
+
+        private fun Map<*, *>.bytes(k: String): ByteArray? = (this[k] as? String)?.let {
+            try {
+                unb64(it)
+            } catch (e: IllegalArgumentException) {
+                null
+            }
+        }
+    }
+}
+
+class InviteException(msg: String) : Exception(msg)
+
+internal fun jsonString(s: String): String {
+    val sb = StringBuilder("\"")
+    for (ch in s) {
+        when {
+            ch == '"' -> sb.append("\\\"")
+            ch == '\\' -> sb.append("\\\\")
+            ch < ' ' -> sb.append("\\u%04x".format(ch.code))
+            else -> sb.append(ch)
+        }
+    }
+    return sb.append('"').toString()
+}
+
+/** Analyseur JSON minimal (objets, tableaux, chaînes, nombres, booléens, null), suffisant pour l'invitation. */
+internal object MiniJson {
+    fun parse(s: String): Any? {
+        val p = P(s)
+        val v = p.value()
+        p.ws()
+        require(p.i == s.length) { "données après le JSON" }
+        return v
+    }
+
+    private class P(val s: String) {
+        var i = 0
+        var depth = 0
+
+        fun ws() {
+            while (i < s.length && s[i] in " \t\r\n") i++
+        }
+
+        fun value(): Any? {
+            ws()
+            require(i < s.length)
+            return when (s[i]) {
+                '{' -> obj()
+                '[' -> arr()
+                '"' -> str()
+                't' -> lit("true", true)
+                'f' -> lit("false", false)
+                'n' -> lit("null", null)
+                else -> num()
+            }
+        }
+
+        fun lit(w: String, v: Any?): Any? {
+            require(s.startsWith(w, i)); i += w.length; return v
+        }
+
+        fun num(): Number {
+            val start = i
+            while (i < s.length && (s[i].isDigit() || s[i] in "+-.eE")) i++
+            val t = s.substring(start, i)
+            return t.toLongOrNull() ?: t.toDouble()
+        }
+
+        fun str(): String {
+            require(s[i] == '"'); i++
+            val sb = StringBuilder()
+            while (true) {
+                require(i < s.length)
+                val c = s[i++]
+                when (c) {
+                    '"' -> return sb.toString()
+                    '\\' -> {
+                        val e = s[i++]
+                        when (e) {
+                            '"' -> sb.append('"'); '\\' -> sb.append('\\'); '/' -> sb.append('/')
+                            'b' -> sb.append('\b'); 'f' -> sb.append('\u000c'); 'n' -> sb.append('\n')
+                            'r' -> sb.append('\r'); 't' -> sb.append('\t')
+                            'u' -> { sb.append(s.substring(i, i + 4).toInt(16).toChar()); i += 4 }
+                            else -> throw IllegalArgumentException("échappement invalide")
+                        }
+                    }
+                    else -> sb.append(c)
+                }
+            }
+        }
+
+        fun obj(): Map<String, Any?> {
+            require(++depth < 16); i++
+            val m = LinkedHashMap<String, Any?>()
+            ws()
+            if (s[i] == '}') { i++; depth--; return m }
+            while (true) {
+                ws()
+                val k = str()
+                ws(); require(s[i] == ':'); i++
+                m[k] = value()
+                ws()
+                when (s[i++]) {
+                    ',' -> continue
+                    '}' -> { depth--; return m }
+                    else -> throw IllegalArgumentException("objet invalide")
+                }
+            }
+        }
+
+        fun arr(): List<Any?> {
+            require(++depth < 16); i++
+            val l = ArrayList<Any?>()
+            ws()
+            if (s[i] == ']') { i++; depth--; return l }
+            while (true) {
+                l.add(value())
+                ws()
+                when (s[i++]) {
+                    ',' -> continue
+                    ']' -> { depth--; return l }
+                    else -> throw IllegalArgumentException("tableau invalide")
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,51 @@
+name: Relais
+
+on:
+  push:
+    branches: [main]
+    paths: ["relay/**", ".github/workflows/relay.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: relay
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Dépendances
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum || echo "::warning::go.mod/go.sum à mettre à jour dans le dépôt (go mod tidy)."
+
+      - name: Tests (relais avec SQLite + client)
+        run: |
+          go vet ./...
+          go test -count=1 ./...
+
+      - name: Binaires Linux statiques
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            GOOS=linux GOARCH=$arch go build -trimpath -ldflags "-s -w" -o dist/relayd-linux-$arch .
+            GOOS=linux GOARCH=$arch go build -trimpath -ldflags "-s -w" -o dist/relaycli-linux-$arch ./cmd/relaycli
+          done
+          (cd dist && sha256sum * > SHA256SUMS)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: relais-binaires
+          path: relay/dist/
+          retention-days: 14

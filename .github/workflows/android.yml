@@ -1,0 +1,64 @@
+name: Android
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["relay/**", "**.md"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Keystore de signature
+        env:
+          KEYSTORE_B64: ${{ secrets.PARANOID_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/paranoid.jks"
+            echo "PARANOID_KEYSTORE=$RUNNER_TEMP/paranoid.jks" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Aucun keystore dans les secrets : APK signé avec une clé de debug jetable. Chaque build aura une signature différente et l'appli devra être désinstallée (identité perdue) pour être mise à jour."
+          fi
+
+      - name: Tests du core et compilation
+        env:
+          PARANOID_KEYSTORE_PASSWORD: ${{ secrets.PARANOID_KEYSTORE_PASSWORD }}
+          PARANOID_KEY_ALIAS: ${{ secrets.PARANOID_KEY_ALIAS }}
+          PARANOID_KEY_PASSWORD: ${{ secrets.PARANOID_KEY_PASSWORD }}
+        run: ./gradlew --no-daemon --stacktrace :core:test :app:assembleRelease
+
+      - name: Rapport de tests
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rapport-tests-core
+          path: core/build/reports/tests/
+          if-no-files-found: ignore
+
+      - name: Nom de l'APK
+        run: |
+          v=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          mv app/build/outputs/apk/release/app-release.apk "paranoid-$v-${GITHUB_SHA::7}.apk"
+          sha256sum paranoid-*.apk | tee SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: paranoid-apk
+          path: |
+            paranoid-*.apk
+            SHA256SUMS
+          retention-days: 14
