@@ -26,7 +26,10 @@ jobs:
       - name: Dépendances
         run: |
           go mod tidy
-          git diff --exit-code go.mod go.sum || echo "::warning::go.mod/go.sum à mettre à jour dans le dépôt (go mod tidy)."
+          if ! git diff --quiet -- go.mod go.sum 2>/dev/null || ! git ls-files --error-unmatch go.sum >/dev/null 2>&1; then
+            echo "::warning::go.mod/go.sum à mettre à jour dans le dépôt (go mod tidy). Contenu attendu :"
+            echo "----- go.mod -----"; cat go.mod; echo "----- go.sum -----"; cat go.sum; echo "----- fin -----"
+          fi
 
       - name: Tests (relais avec SQLite + client)
         run: |
