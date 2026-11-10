@@ -13,7 +13,6 @@ import app.paranoid.core.RelayRef
 import app.paranoid.core.b64
 import app.paranoid.core.parseFingerprint
 import app.paranoid.core.safetyNumber
-import app.paranoid.core.unb64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -63,7 +62,6 @@ data class Ui(
     val error: String? = null,
     val info: String? = null,
     val connectionError: String? = null,
-    val pushStatus: String? = null,
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -78,10 +76,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _ui = MutableStateFlow(Ui())
     val ui: StateFlow<Ui> = _ui
 
-    /** Clé VAPID du relais : quand elle est connue, l'activité s'enregistre auprès du distributeur. */
-    private val _pushVapid = MutableStateFlow<String?>(null)
-    val pushVapid: StateFlow<String?> = _pushVapid
-
     val maxText = MAX_TEXT
     val minCode = LockBox.MIN_CODE_LENGTH
 
@@ -92,9 +86,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     init {
-        PushBus.endpoint.value = PushPrefs.load(app)
-        viewModelScope.launch { PushBus.wake.collect { pollNow() } }
-        viewModelScope.launch(Dispatchers.IO) { PushBus.endpoint.collect { if (it != null) syncPush() } }
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 when (store.status()) {
@@ -201,7 +192,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         pending = null
         messenger = Messenger(s, ::persist)
         refresh(Screen.Contacts)
-        onUnlocked()
     }
 
     fun unlock(code: String) = action {
@@ -209,7 +199,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             StateStore.UnlockResult.Unlocked -> {
                 messenger = Messenger(store.load(), ::persist)
                 refresh(Screen.Contacts)
-                onUnlocked()
             }
             StateStore.UnlockResult.Duress -> redButton()
             is StateStore.UnlockResult.Wrong ->
@@ -226,8 +215,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      */
     private fun redButton() {
         _ui.value = Ui(screen = Screen.Setup)
-        PushBus.foregroundUnlocked = false
-        Push.forget(getApplication())
         duressJob = viewModelScope.launch(Dispatchers.IO + NonCancellable) {
             val state = runCatching { store.load() }.getOrNull()
             store.wipe()
@@ -245,51 +232,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             messenger = null
             store.lock()
         }
-        PushBus.foregroundUnlocked = false
         _ui.value = Ui(screen = Screen.Locked)
-    }
-
-    // ---------- notifications ----------
-
-    private fun onUnlocked() {
-        PushBus.foregroundUnlocked = true
-        Notifier.cancel(getApplication())
-        viewModelScope.launch(Dispatchers.IO) {
-            val m = messenger ?: return@launch
-            val key = runCatching { m.vapidKey() }
-            key.onSuccess { k ->
-                if (k != null) {
-                    // Sans distributeur UnifiedPush sur le téléphone, on ne demande rien : les
-                    // messages attendent sur le relais et sont relevés au déverrouillage.
-                    if (PushBus.endpoint.value != null || Push.distributorAvailable(getApplication())) {
-                        _pushVapid.value = b64(k)
-                    }
-                }
-            }
-            syncPush()
-        }
-    }
-
-    /** Réponse de l'activité après le choix du distributeur. */
-    fun onPushDistributor(ok: Boolean) {
-        if (!ok) _ui.update { it.copy(pushStatus = null) }
-    }
-
-    /** Enregistre le point de notification courant sur toutes les boîtes (si déverrouillé). */
-    private fun syncPush() {
-        val m = messenger ?: return
-        val t = PushBus.endpoint.value ?: return
-        try {
-            m.syncPush(t.url, unb64(t.pubKey), unb64(t.auth))
-            _ui.update { it.copy(pushStatus = "Notifications actives") }
-        } catch (e: Exception) {
-            _ui.update { it.copy(pushStatus = "Notifications : enregistrement impossible (${e.message})") }
-        }
     }
 
     /** Verrouillage automatique après 60 s en arrière-plan (scanner QR et partage compris). */
     fun onAppBackground() {
-        PushBus.foregroundUnlocked = false
         if (messenger == null) return
         autoLockJob?.cancel()
         autoLockJob = viewModelScope.launch {
@@ -300,11 +247,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun onAppForeground() {
         autoLockJob?.cancel()
-        if (messenger != null) {
-            PushBus.foregroundUnlocked = true
-            Notifier.cancel(getApplication())
-            pollNow()
-        }
+        if (messenger != null) pollNow()
     }
 
     // ---------- messagerie ----------
@@ -314,7 +257,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val invite = m.invite(name)
         _ui.update { it.copy(add = AddFlow(name.trim(), invite)) }
         refresh()
-        syncPush() // la nouvelle boîte doit aussi réveiller le téléphone
     }
 
     fun addScanned(name: String, invite: String) = action {
@@ -352,7 +294,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun wipeAll() = viewModelScope.launch(Dispatchers.IO) {
-        Push.forget(getApplication())
         store.wipe()
         messenger = null
         pending = null
@@ -369,7 +310,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Relève immédiate (réveil par une notification UnifiedPush). */
+    /** Relève immédiate (retour au premier plan). */
     fun pollNow() {
         viewModelScope.launch(Dispatchers.IO) { pollOnce() }
     }

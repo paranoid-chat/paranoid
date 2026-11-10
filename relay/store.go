@@ -58,10 +58,6 @@ func OpenStore(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	if err := migratePush(db); err != nil {
-		db.Close()
-		return nil, err
-	}
 	return &Store{db: db}, nil
 }
 
@@ -215,73 +211,4 @@ func (s *Store) Purge(now, ttl, boxExpiry int64) error {
 		return err
 	}
 	return tx.Commit()
-}
-
-// ---------- notifications (UnifiedPush / Web Push) ----------
-
-// PushTarget est le point de notification d'une boîte : URL Web Push et clés RFC 8291 du client.
-type PushTarget struct {
-	URL    string
-	P256dh []byte // clé publique P-256 non compressée (65 octets)
-	Auth   []byte // secret d'authentification (16 octets)
-}
-
-// migratePush ajoute les colonnes de notification aux bases créées avant leur introduction.
-func migratePush(db *sql.DB) error {
-	rows, err := db.Query(`PRAGMA table_info(boxes)`)
-	if err != nil {
-		return err
-	}
-	have := map[string]bool{}
-	for rows.Next() {
-		var cid, notnull, pk int
-		var name, typ string
-		var dflt sql.NullString
-		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
-			rows.Close()
-			return err
-		}
-		have[name] = true
-	}
-	rows.Close()
-	for col, typ := range map[string]string{"push_url": "TEXT", "push_p256dh": "BLOB", "push_auth": "BLOB"} {
-		if !have[col] {
-			if _, err := db.Exec(`ALTER TABLE boxes ADD COLUMN ` + col + ` ` + typ); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-// SetPush enregistre (ou efface si t est nil) le point de notification d'une boîte.
-func (s *Store) SetPush(boxID []byte, t *PushTarget) error {
-	var res sql.Result
-	var err error
-	if t == nil {
-		res, err = s.db.Exec(`UPDATE boxes SET push_url = NULL, push_p256dh = NULL, push_auth = NULL WHERE box_id = ?`, boxID)
-	} else {
-		res, err = s.db.Exec(`UPDATE boxes SET push_url = ?, push_p256dh = ?, push_auth = ? WHERE box_id = ?`, t.URL, t.P256dh, t.Auth, boxID)
-	}
-	if err != nil {
-		return err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
-// PushTarget renvoie le point de notification associé à un write_id, ou nil s'il n'y en a pas.
-func (s *Store) PushTarget(writeID []byte) (*PushTarget, error) {
-	var url sql.NullString
-	var p256dh, auth []byte
-	err := s.db.QueryRow(`SELECT push_url, push_p256dh, push_auth FROM boxes WHERE write_id = ?`, writeID).Scan(&url, &p256dh, &auth)
-	if errors.Is(err, sql.ErrNoRows) || (err == nil && !url.Valid) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &PushTarget{URL: url.String, P256dh: p256dh, Auth: auth}, nil
 }

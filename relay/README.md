@@ -75,18 +75,6 @@ go build -o relaycli ./cmd/relaycli
 
 Chaque identité vit dans un dossier (`-d alice`). Le fichier `state.json` contient les clés privées **en clair** : c'est un outil de test, à ne pas utiliser pour de vrais échanges.
 
-## Notifications (UnifiedPush)
-
-Activées par défaut (voir `../PROTOCOL.md` §6 bis). Options :
-
-| Option | Rôle |
-|---|---|
-| `--push=false` | désactive les réveils |
-| `--vapid FICHIER` | clé VAPID (par défaut `vapid.pem` à côté de la base, créée au premier démarrage, mode 0600) |
-| `--vapid-sub mailto:…` | contact VAPID transmis aux services de notification |
-| `--push-allow-private` | autorise un service de notification sur un réseau privé (ntfy en LAN) |
-| `--push-allow-http` | autorise le http (tests uniquement) |
-
 ## Limites connues de cette v0
 
 - Les limites de débit et les nonces sont en mémoire : ils sont remis à zéro au redémarrage.

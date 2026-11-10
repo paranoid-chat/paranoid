@@ -231,10 +231,6 @@ fun ContactsScreen(ui: Ui, vm: MainViewModel) {
             ConnectionBanner(ui)
             Text("Mon empreinte : ${ui.mySafety}", style = MaterialTheme.typography.labelMedium,
                 fontFamily = FontFamily.Monospace, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp))
-            ui.pushStatus?.let {
-                Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp))
-            }
             Spacer(Modifier.height(8.dp))
             HorizontalDivider()
             if (ui.contacts.isEmpty()) {

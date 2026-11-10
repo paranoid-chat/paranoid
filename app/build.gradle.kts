@@ -16,8 +16,8 @@ android {
         applicationId = "app.paranoid"
         minSdk = 33
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.3.1"
+        versionCode = 6
+        versionName = "0.4.0"
         // Relais de développement (LAN). L'empreinte est publique : ce n'est pas un secret.
         buildConfigField("String", "DEFAULT_RELAY_URL", "\"https://192.168.1.252:8443\"")
         buildConfigField(
@@ -80,7 +80,4 @@ dependencies {
     // QR : génération (zxing core) et scan (sans Google Play Services).
     implementation("com.google.zxing:core:3.5.3")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
-
-    // Notifications sans Google : UnifiedPush (distributeur au choix, ntfy par défaut).
-    implementation("org.unifiedpush.android:connector:3.0.10")
 }

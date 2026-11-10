@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -32,11 +31,6 @@ func main() {
 	certFile := flag.String("cert", "relay.crt", "certificat TLS (PEM)")
 	keyFile := flag.String("key", "relay.key", "clé privée TLS (PEM)")
 	dbPath := flag.String("db", "relay.db", "chemin de la base SQLite")
-	push := flag.Bool("push", true, "réveils UnifiedPush (Web Push) après chaque dépôt")
-	vapidPath := flag.String("vapid", "", "clé VAPID (PEM, créée si absente ; défaut : à côté de la base)")
-	vapidSub := flag.String("vapid-sub", "mailto:relay@localhost", "contact VAPID transmis aux services de notification")
-	pushPrivate := flag.Bool("push-allow-private", false, "autorise les services de notification sur un réseau privé (ntfy en LAN)")
-	pushHTTP := flag.Bool("push-allow-http", false, "autorise les services de notification en http (tests uniquement)")
 	flag.Parse()
 
 	store, err := OpenStore(*dbPath)
@@ -51,17 +45,7 @@ func main() {
 	}
 
 	srv := NewServer(DefaultConfig(), store)
-	if *push {
-		path := *vapidPath
-		if path == "" {
-			path = filepath.Join(filepath.Dir(*dbPath), "vapid.pem")
-		}
-		p, err := NewPusher(path, *vapidSub, *pushPrivate, *pushHTTP)
-		if err != nil {
-			log.Fatalf("notifications : %v", err)
-		}
-		srv.SetPusher(p)
-	}
+
 	httpSrv := &http.Server{
 		Addr:    *listen,
 		Handler: srv,

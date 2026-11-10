@@ -252,9 +252,6 @@ class DoubleRatchetTest {
         st.contacts["a"] = Contact("a").also { it.burned = true; it.messages.add(ChatMessage(p.id, false, 7, "", MessageStatus.ALERT)) }
         val back = AppState.decode(st.encode())
         assertTrue(back.contacts["a"]!!.burned)
-        val st2 = AppState(b.seed, b.x, RelayRef("https://x:1", randomBytes(32)))
-        st2.contacts["c"] = Contact("c").also { it.myBox = MyBox(st2.relay, randomBytes(16), randomBytes(16), randomBytes(32)).apply { pushUrl = "https://ntfy.example/upX" } }
-        assertEquals("https://ntfy.example/upX", AppState.decode(st2.encode()).contacts["c"]!!.myBox!!.pushUrl)
         assertEquals(MessageStatus.ALERT, back.contacts["a"]!!.messages[0].status)
     }
 

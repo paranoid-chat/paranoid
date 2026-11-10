@@ -1,13 +1,9 @@
 package app.paranoid
 
-import android.Manifest
-import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -16,7 +12,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.Lifecycle
@@ -52,17 +47,6 @@ class MainActivity : ComponentActivity() {
         setContent {
             ParanoidTheme {
                 val ui by vm.ui.collectAsStateWithLifecycle()
-                val vapid by vm.pushVapid.collectAsStateWithLifecycle()
-                val notifPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
-                LaunchedEffect(vapid) {
-                    val key = vapid ?: return@LaunchedEffect
-                    if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                        notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-                    }
-                    if (PushPrefs.load(this@MainActivity) == null) {
-                        Push.register(this@MainActivity, key) { ok -> vm.onPushDistributor(ok) }
-                    }
-                }
                 BackHandler(enabled = ui.screen is Screen.Chat || ui.screen is Screen.AddContact) { vm.goContacts() }
                 when (val s = ui.screen) {
                     Screen.Loading -> LoadingScreen()

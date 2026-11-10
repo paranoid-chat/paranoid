@@ -4,7 +4,6 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <!-- Aucune sauvegarde : ni Google, ni transfert d'appareil. Les clés ne quittent pas le téléphone. -->
@@ -29,14 +28,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Réveils UnifiedPush (ntfy…) : le contenu est vide, voir Push.kt. -->
-        <service
-            android:name=".ParanoidPushService"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="org.unifiedpush.android.connector.PUSH_EVENT" />
-            </intent-filter>
-        </service>
 
         <!-- Scanner QR : autoriser la rotation. -->
         <activity
