@@ -17,13 +17,14 @@ class RelayRef(val url: String, val fp: ByteArray)
 
 open class RelayException(msg: String, val status: Int = 0) : Exception(msg)
 class QuotaFullException : RelayException("la boîte du destinataire est pleine : réessaie plus tard", 507)
+class RelayFullException : RelayException("le relais est plein : réessaie plus tard, ou préviens son administrateur", 507)
 class PinningException(msg: String) : CertificateException(msg)
 
 class Record(val seq: Long, val ts: Long, val blob: ByteArray)
 
 class RelayClient(private val ref: RelayRef, private val timeoutMs: Int = 20_000) {
 
-    private class Response(val code: Int, val body: ByteArray, val more: Boolean, val retryAfter: String?)
+    private class Response(val code: Int, val body: ByteArray, val more: Boolean, val retryAfter: String?, val full: Boolean)
 
     private class PinningTrustManager(private val fp: ByteArray) : X509TrustManager {
         override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {
@@ -76,7 +77,7 @@ class RelayClient(private val ref: RelayRef, private val timeoutMs: Int = 20_000
             val code = conn.responseCode
             val stream = if (code >= 400) conn.errorStream else conn.inputStream
             val data = stream?.use { readLimited(it, 1 shl 20) } ?: ByteArray(0)
-            return Response(code, data, conn.getHeaderField("X-More") == "1", conn.getHeaderField("Retry-After"))
+            return Response(code, data, conn.getHeaderField("X-More") == "1", conn.getHeaderField("Retry-After"), conn.getHeaderField("X-Relay-Full") == "1")
         } finally {
             conn.disconnect()
         }
@@ -95,6 +96,7 @@ class RelayClient(private val ref: RelayRef, private val timeoutMs: Int = 20_000
     }
 
     private fun fail(r: Response): Nothing {
+        if (r.full) throw RelayFullException()
         if (r.code == 429) throw RelayException("relais : trop de requêtes, réessaie dans ${r.retryAfter} s", 429)
         throw RelayException("relais : ${r.code} (${r.body.toString(Charsets.UTF_8).trim()})", r.code)
     }
@@ -114,7 +116,7 @@ class RelayClient(private val ref: RelayRef, private val timeoutMs: Int = 20_000
 
     fun deposit(writeId: ByteArray, blob: ByteArray): Long {
         val r = request("PUT", "/v1/box/${b64(writeId)}/msg", blob, null)
-        if (r.code == 507) throw QuotaFullException()
+        if (r.code == 507 && !r.full) throw QuotaFullException()
         if (r.code != 201 || r.body.size != 8) fail(r)
         var seq = 0L
         for (b in r.body) seq = (seq shl 8) or (b.toLong() and 0xff)

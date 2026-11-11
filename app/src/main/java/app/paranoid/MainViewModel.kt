@@ -34,6 +34,7 @@ sealed interface Screen {
     data object ChangeCodes : Screen
     data object ChangeRelay : Screen
     data object Learn : Screen
+    data object Settings : Screen
     data object Locked : Screen
     data object Contacts : Screen
     data object AddContact : Screen
@@ -59,6 +60,7 @@ data class Ui(
     val mySafety: String = "",
     val relayUrl: String = "",
     val relayFp: String = "",
+    val historySeconds: Long = 0,
     val contacts: List<ContactRow> = emptyList(),
     val chat: List<MessageRow> = emptyList(),
     val add: AddFlow = AddFlow(),
@@ -134,7 +136,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 } ?: emptyList()
                 cur.copy(
                     screen = target, mySafety = m.safetyNumber, relayUrl = m.state.relay.url,
-                    relayFp = formatFingerprint(m.state.relay.fp), contacts = contacts, chat = chat,
+                    relayFp = formatFingerprint(m.state.relay.fp), historySeconds = m.state.historySeconds,
+                    contacts = contacts, chat = chat,
                 )
             }
         }
@@ -201,7 +204,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun unlock(code: String) = action {
         when (val r = store.unlock(code)) {
             StateStore.UnlockResult.Unlocked -> {
-                messenger = Messenger(store.load(), ::persist)
+                messenger = Messenger(store.load(), ::persist).also { it.purgeHistory() }
                 refresh(Screen.Contacts)
             }
             StateStore.UnlockResult.Duress -> redButton(code)
@@ -258,6 +261,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 error(if (r.waitSeconds > 0) "Code actuel incorrect. Prochain essai dans ${r.waitSeconds} s." else "Code actuel incorrect.")
             is StateStore.UnlockResult.Throttled -> error("Trop d'essais. Réessaie dans ${r.waitSeconds} s.")
         }
+    }
+
+    fun goSettings() = _ui.update { it.copy(screen = Screen.Settings, error = null, info = null) }
+
+    /** Nombre de messages qu'effacerait une conservation de [seconds] secondes. */
+    fun countOlderThan(seconds: Long): Int = messenger?.countOlderThan(seconds) ?: 0
+
+    /** Change la durée de conservation de l'historique ; la purge est immédiate. */
+    fun setHistory(seconds: Long) = action {
+        val m = messenger ?: return@action
+        val n = m.setHistory(seconds)
+        _ui.update { it.copy(info = if (n > 0) "$n message(s) effacé(s) de ce téléphone." else null) }
+        refresh()
     }
 
     fun goChangeRelay() = _ui.update { it.copy(screen = Screen.ChangeRelay, error = null, info = null) }

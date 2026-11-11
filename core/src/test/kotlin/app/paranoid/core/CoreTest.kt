@@ -358,3 +358,41 @@ class LockBoxTest {
         println("Argon2id 64 Mio x3 : création ${(t1 - t0) / 1_000_000} ms, ouverture ${(t2 - t1) / 1_000_000} ms (JVM)")
     }
 }
+
+class HistoryTest {
+    private fun stateWith(now: Long): AppState {
+        val st = AppState.newIdentity(RelayRef("https://192.168.1.252:8443", randomBytes(32)))
+        val c = Contact("a")
+        val day = 86_400L
+        c.messages.add(ChatMessage(randomBytes(16), true, now - 10 * day, "vieux", MessageStatus.SENT))
+        c.messages.add(ChatMessage(randomBytes(16), false, now - 10 * day, "", MessageStatus.ALERT))
+        c.messages.add(ChatMessage(randomBytes(16), false, now - 2 * day, "avant-hier", MessageStatus.RECEIVED))
+        c.messages.add(ChatMessage(randomBytes(16), false, now - 3600, "récent", MessageStatus.RECEIVED))
+        st.contacts["a"] = c
+        return st
+    }
+
+    @Test
+    fun purgeKeepsAlertsAndRecent() {
+        val now = 1_800_000_000L
+        val st = stateWith(now)
+        var saves = 0
+        val m = Messenger(st, persist = { saves++ })
+        assertEquals(0, m.purgeHistory(now)) // pour toujours par défaut
+        assertEquals(2, m.countOlderThan(86_400, now))
+        st.historySeconds = 7 * 86_400L
+        assertEquals(1, m.purgeHistory(now))
+        assertEquals(listOf("", "avant-hier", "récent"), st.contacts["a"]!!.messages.map { it.text })
+        st.historySeconds = 86_400L
+        assertEquals(1, m.purgeHistory(now))
+        assertEquals(listOf(MessageStatus.ALERT, MessageStatus.RECEIVED), st.contacts["a"]!!.messages.map { it.status })
+        assertEquals(2, saves)
+    }
+
+    @Test
+    fun retentionIsSaved() {
+        val st = stateWith(1_800_000_000L)
+        st.historySeconds = 3 * 86_400L
+        assertEquals(3 * 86_400L, AppState.decode(st.encode()).historySeconds)
+    }
+}

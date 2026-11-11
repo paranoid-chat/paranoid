@@ -350,6 +350,8 @@ private val TOPICS = listOf(
             "contre le rejeu. Aucune clé commune ne relie les boîtes d'une même personne.\n\n" +
             "Limites : blocs de 2048 octets exactement, 100 en attente par boîte, 7 jours de conservation, boîte supprimée après " +
             "90 jours sans relève, 10 créations de boîtes par heure et par IP, 60 dépôts par minute et par boîte. " +
+            "Plafond global : au-delà de 90 % de la taille maximale de la base (1 Gio par défaut), plus de nouvelle boîte ; à 100 %, " +
+            "ou s'il reste moins de 2 Gio libres sur le disque, plus de dépôt. L'appli affiche alors « le relais est plein ». " +
             "Le relais n'écrit aucun journal. Le protocole complet est dans PROTOCOL.md.",
     ),
     Topic(
@@ -415,12 +417,15 @@ private val TOPICS = listOf(
             "est inutilisable sur un autre appareil.\n\n" +
             "Aucune sauvegarde (Google, Samsung, PC) ne contient Paranoid. Les captures d'écran sont bloquées, et l'aperçu dans " +
             "les applis récentes est masqué. L'appli se verrouille avec le cadenas, ou après 60 s en arrière-plan.\n\n" +
-            "Chaque champ de saisie demande au clavier de ne rien apprendre ni mémoriser de ce que tu tapes (Gboard passe alors en mode incognito).",
+            "Chaque champ de saisie demande au clavier de ne rien apprendre ni mémoriser de ce que tu tapes (Gboard passe alors en mode incognito).\n\n" +
+            "Dans Paramètres, tu choisis combien de temps garder l'historique : de « pour toujours » à 24 heures. Les messages plus anciens " +
+            "sont effacés de ton téléphone (pas de celui de tes contacts).",
         tech = "state.bin : l'état, en AES-256-GCM avec une clé de données aléatoire de 256 bits.\n" +
             "lock.bin : le coffre à deux codes, chiffré en AES-256-GCM par une clé non exportable de l'Android Keystore " +
             "(StrongBox si le téléphone en a une, sinon l'environnement d'exécution sécurisé, TEE).\n\n" +
             "Fichiers dans noBackupFilesDir, allowBackup=false, règles d'extraction excluant tout, FLAG_SECURE sur la fenêtre, " +
-            "IME_FLAG_NO_PERSONALIZED_LEARNING sur tous les champs de saisie. " +
+            "IME_FLAG_NO_PERSONALIZED_LEARNING sur tous les champs de saisie. Purge de l'historique au déverrouillage, à chaque " +
+            "relève et au changement du réglage ; l'âge d'un message reçu est l'heure annoncée par l'expéditeur, jamais dans le futur. " +
             "Au verrouillage, la clé de données est effacée de la mémoire.\n\n" +
             "Détruire l'entrée Keystore rend tous les fichiers illisibles instantanément, même s'il en reste des traces dans la mémoire flash.",
     ),
@@ -477,6 +482,7 @@ private val TOPICS = listOf(
             "• le compteur d'essais est un fichier, qu'un attaquant ayant les droits root pourrait restaurer ;\n" +
             "• sans réseau, l'alerte du bouton rouge ne part pas, mais l'effacement a lieu quand même ;\n" +
             "• un message non relevé en 7 jours est perdu ;\n" +
+            "• effacer l'historique ne l'efface que sur ton téléphone ;\n" +
             "• le code n'a pas encore été relu par un expert indépendant.",
     ),
     Topic(

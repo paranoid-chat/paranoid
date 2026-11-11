@@ -25,6 +25,8 @@ type Config struct {
 	CreatesPerHour    int
 	DepositsPerMinute int
 	MaxPage           int
+	MaxDB             int64 // octets occupés dans la base au maximum (0 = sans limite)
+	MinFree           int64 // octets à laisser libres sur le disque (0 = sans limite)
 }
 
 func DefaultConfig() Config {
@@ -37,6 +39,8 @@ func DefaultConfig() Config {
 		CreatesPerHour:    10,
 		DepositsPerMinute: 60,
 		MaxPage:           50,
+		MaxDB:             1 << 30, // 1 Gio
+		MinFree:           2 << 30, // 2 Gio
 	}
 }
 
@@ -47,6 +51,7 @@ type Server struct {
 	nonces     *nonceCache
 	createLim  *limiter
 	depositLim *limiter
+	cap        *capacity
 	mux        *http.ServeMux
 }
 
@@ -58,6 +63,7 @@ func NewServer(cfg Config, store *Store) *Server {
 		nonces:     newNonceCache(),
 		createLim:  newLimiter(cfg.CreatesPerHour, time.Hour),
 		depositLim: newLimiter(cfg.DepositsPerMinute, time.Minute),
+		cap:        newCapacity(cfg.MaxDB, cfg.MinFree, store.UsedBytes, store.FreeBytes),
 		mux:        http.NewServeMux(),
 	}
 	s.mux.HandleFunc("POST /v1/box", s.handleCreate)
@@ -109,6 +115,11 @@ func readExact(w http.ResponseWriter, r *http.Request, n int) ([]byte, bool) {
 		return nil, false
 	}
 	return body, true
+}
+
+func relayFull(w http.ResponseWriter) {
+	w.Header().Set("X-Relay-Full", "1")
+	http.Error(w, "relais plein", http.StatusInsufficientStorage)
 }
 
 func tooMany(w http.ResponseWriter, retry time.Duration) {
@@ -186,6 +197,10 @@ func (s *Server) authBody(w http.ResponseWriter, r *http.Request, boxID []byte) 
 // ---------- handlers ----------
 
 func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
+	if !s.cap.canCreate(s.now()) {
+		relayFull(w)
+		return
+	}
 	if ok, retry := s.createLim.allow(clientIP(r), s.now()); !ok {
 		tooMany(w, retry)
 		return
@@ -221,6 +236,10 @@ func (s *Server) handleDeposit(w http.ResponseWriter, r *http.Request) {
 	}
 	if ok, retry := s.depositLim.allow(hex.EncodeToString(writeID), s.now()); !ok {
 		tooMany(w, retry)
+		return
+	}
+	if !s.cap.canDeposit(s.now()) {
+		relayFull(w)
 		return
 	}
 	blob, ok := readExact(w, r, s.cfg.BlobSize)

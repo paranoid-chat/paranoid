@@ -310,3 +310,71 @@ func TestBoxExpiryResetByRead(t *testing.T) {
 	}
 	wantCode(t, e.fetch(b, ""), 200)
 }
+
+func TestRelayFull(t *testing.T) {
+	e := newEnv(t, func(c *Config) { c.MaxDB = 1000; c.MinFree = 500 })
+	used, free := int64(0), int64(10_000)
+	e.srv.cap.used = func() (int64, error) { return used, nil }
+	e.srv.cap.free = func() (int64, error) { return free, nil }
+	e.srv.cap.every = 0 // mesure à chaque requête
+
+	writeID := e.newBox().wid
+	create := func() *httptest.ResponseRecorder {
+		return e.do(httptest.NewRequest("POST", "/v1/box", bytes.NewReader(randBytes(32))))
+	}
+	if code := e.deposit(writeID, blob(1)).Code; code != http.StatusCreated {
+		t.Fatalf("dépôt sous le plafond : %d", code)
+	}
+	// 90 % : plus de nouvelles boîtes, mais les dépôts passent encore.
+	used = 900
+	if rec := create(); rec.Code != http.StatusInsufficientStorage || rec.Header().Get("X-Relay-Full") != "1" {
+		t.Fatalf("création à 90 %% : %d", rec.Code)
+	}
+	if code := e.deposit(writeID, blob(1)).Code; code != http.StatusCreated {
+		t.Fatalf("dépôt à 90 %% : %d", code)
+	}
+	// 100 % : plus aucun dépôt.
+	used = 1000
+	if rec := e.deposit(writeID, blob(1)); rec.Code != http.StatusInsufficientStorage || rec.Header().Get("X-Relay-Full") != "1" {
+		t.Fatalf("dépôt à 100 %% : %d", rec.Code)
+	}
+	// Disque presque plein, base sous le plafond : refus aussi.
+	used, free = 0, 100
+	if code := e.deposit(writeID, blob(1)).Code; code != http.StatusInsufficientStorage {
+		t.Fatalf("dépôt disque plein : %d", code)
+	}
+	if code := create().Code; code != http.StatusInsufficientStorage {
+		t.Fatalf("création disque plein : %d", code)
+	}
+	free = 10_000
+	if code := e.deposit(writeID, blob(1)).Code; code != http.StatusCreated {
+		t.Fatalf("dépôt après libération : %d", code)
+	}
+}
+
+func TestUsedBytes(t *testing.T) {
+	st, err := OpenStore(filepath.Join(t.TempDir(), "u.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if n, err := st.UsedBytes(); err != nil || n <= 0 {
+		t.Fatalf("UsedBytes = %d, %v", n, err)
+	}
+	if n, err := st.FreeBytes(); err != nil || n <= 0 {
+		t.Fatalf("FreeBytes = %d, %v", n, err)
+	}
+}
+
+func TestParseSize(t *testing.T) {
+	for in, want := range map[string]int64{"0": 0, "512": 512, "1K": 1024, "512M": 512 << 20, "1g": 1 << 30, "2T": 2 << 40} {
+		if got, err := parseSize(in); err != nil || got != want {
+			t.Fatalf("parseSize(%q) = %d, %v", in, got, err)
+		}
+	}
+	for _, bad := range []string{"", "G", "-1", "1.5G", "abc"} {
+		if _, err := parseSize(bad); err == nil {
+			t.Fatalf("parseSize(%q) accepté", bad)
+		}
+	}
+}

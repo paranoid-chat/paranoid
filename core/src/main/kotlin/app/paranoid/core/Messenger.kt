@@ -140,7 +140,50 @@ class Messenger(
                 errors.add("${c.name} : ${ex.message}")
             }
         }
+        purgeHistory()
         return PollResult(received, rejected, errors)
+    }
+
+    // ---------- historique local ----------
+
+    private fun expired(m: ChatMessage, cutoff: Long) =
+        m.ts < cutoff && m.status != MessageStatus.ALERT && m.status != MessageStatus.RELAY_CHANGE
+
+    /** Nombre de messages qu'effacerait une conservation de [seconds] secondes (0 = pour toujours). */
+    @Synchronized
+    fun countOlderThan(seconds: Long, now: Long = System.currentTimeMillis() / 1000): Int {
+        if (seconds <= 0) return 0
+        val cutoff = now - seconds
+        return state.contacts.values.sumOf { c -> c.messages.count { expired(it, cutoff) } }
+    }
+
+    /**
+     * Efface de ce téléphone les messages plus anciens que la durée choisie. Les cartes « bouton
+     * rouge » et « changement de relais » sont gardées : elles disent pourquoi la conversation est
+     * fermée. Renvoie le nombre de messages effacés.
+     */
+    @Synchronized
+    fun purgeHistory(now: Long = System.currentTimeMillis() / 1000): Int {
+        val seconds = state.historySeconds
+        if (seconds <= 0) return 0
+        val cutoff = now - seconds
+        var n = 0
+        for (c in state.contacts.values) {
+            val before = c.messages.size
+            c.messages.removeAll { expired(it, cutoff) }
+            n += before - c.messages.size
+        }
+        if (n > 0) save()
+        return n
+    }
+
+    /** Change la durée de conservation et applique tout de suite la purge. */
+    @Synchronized
+    fun setHistory(seconds: Long): Int {
+        require(seconds >= 0)
+        state.historySeconds = seconds
+        save()
+        return purgeHistory()
     }
 
     private fun pollContact(c: Contact, out: MutableList<Pair<Contact, ChatMessage>>): Int {
@@ -162,19 +205,22 @@ class Messenger(
                     val e = env(c)
                     val p = decodeInner(session(c, e).decrypt(e, r.blob))
                     val id = b64(p.id)
+                    // Horodatage de l'expéditeur, jamais dans le futur : un message ne peut pas échapper
+                    // à la limite de l'historique en annonçant une date lointaine.
+                    val ts = minOf(p.ts, System.currentTimeMillis() / 1000)
                     if ((p.type == TYPE_TEXT || p.type == TYPE_ALERT || p.type == TYPE_RELAY_CHANGE) && id !in c.seen) {
                         c.seen.addLast(id)
                         while (c.seen.size > 500) c.seen.removeFirst()
                         val m = when (p.type) {
                             TYPE_ALERT -> {
                                 c.burned = true
-                                ChatMessage(p.id, false, p.ts, "", MessageStatus.ALERT)
+                                ChatMessage(p.id, false, ts, "", MessageStatus.ALERT)
                             }
                             TYPE_RELAY_CHANGE -> {
                                 c.burned = true
-                                ChatMessage(p.id, false, p.ts, "", MessageStatus.RELAY_CHANGE)
+                                ChatMessage(p.id, false, ts, "", MessageStatus.RELAY_CHANGE)
                             }
-                            else -> ChatMessage(p.id, false, p.ts, p.body.toString(Charsets.UTF_8), MessageStatus.RECEIVED)
+                            else -> ChatMessage(p.id, false, ts, p.body.toString(Charsets.UTF_8), MessageStatus.RECEIVED)
                         }
                         c.messages.add(m)
                         out.add(c to m)

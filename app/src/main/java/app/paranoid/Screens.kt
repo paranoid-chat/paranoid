@@ -96,7 +96,7 @@ import java.util.Locale
 // ---------- éléments communs ----------
 
 @Composable
-private fun Messages(ui: Ui, vm: MainViewModel) {
+internal fun Messages(ui: Ui, vm: MainViewModel) {
     ui.error?.let {
         AlertDialog(
             onDismissRequest = vm::dismissMessages,
@@ -228,6 +228,7 @@ fun ContactsScreen(ui: Ui, vm: MainViewModel) {
                         DropdownMenuItem(text = { Text("Changer mes codes") }, onClick = { menu = false; vm.goChangeCodes() })
                         DropdownMenuItem(text = { Text("Changer de relais") }, onClick = { menu = false; vm.goChangeRelay() })
                         HorizontalDivider()
+                        DropdownMenuItem(text = { Text("Paramètres") }, onClick = { menu = false; vm.goSettings() })
                         DropdownMenuItem(text = { Text("Comprendre Paranoid") }, onClick = { menu = false; vm.goLearn() })
                     }
                 },

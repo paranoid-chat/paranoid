@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"errors"
+	"path/filepath"
 
 	_ "modernc.org/sqlite"
 )
@@ -23,7 +24,8 @@ type Message struct {
 
 // Store encapsule la base SQLite. Les blobs sont opaques pour le relais.
 type Store struct {
-	db *sql.DB
+	db  *sql.DB
+	dir string // dossier de la base, pour mesurer l'espace disque libre
 }
 
 const schema = `
@@ -58,10 +60,29 @@ func OpenStore(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	return &Store{db: db}, nil
+	return &Store{db: db, dir: filepath.Dir(path)}, nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }
+
+// UsedBytes renvoie l'espace réellement occupé dans la base : les pages libérées, que SQLite
+// réutilise, ne comptent pas.
+func (s *Store) UsedBytes() (int64, error) {
+	var pages, free, size int64
+	if err := s.db.QueryRow("PRAGMA page_count").Scan(&pages); err != nil {
+		return 0, err
+	}
+	if err := s.db.QueryRow("PRAGMA freelist_count").Scan(&free); err != nil {
+		return 0, err
+	}
+	if err := s.db.QueryRow("PRAGMA page_size").Scan(&size); err != nil {
+		return 0, err
+	}
+	return (pages - free) * size, nil
+}
+
+// FreeBytes renvoie l'espace disque disponible là où se trouve la base.
+func (s *Store) FreeBytes() (int64, error) { return diskFree(s.dir) }
 
 func randomID() ([]byte, error) {
 	b := make([]byte, 16)

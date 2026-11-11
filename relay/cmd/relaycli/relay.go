@@ -23,7 +23,10 @@ import (
 
 const recordSize = 16 + BlobSize
 
-var ErrQuotaFull = errors.New("la boîte du destinataire est pleine (100 messages en attente) : réessaie plus tard")
+var (
+	ErrQuotaFull = errors.New("la boîte du destinataire est pleine (100 messages en attente) : réessaie plus tard")
+	ErrRelayFull = errors.New("le relais est plein : réessaie plus tard, ou préviens son administrateur")
+)
 
 type Record struct {
 	Seq  uint64
@@ -91,6 +94,9 @@ func (c *RelayClient) do(method, pathQuery string, body []byte, signer ed25519.P
 }
 
 func statusErr(resp *http.Response, data []byte) error {
+	if resp.Header.Get("X-Relay-Full") == "1" {
+		return ErrRelayFull
+	}
 	if resp.StatusCode == http.StatusTooManyRequests {
 		return fmt.Errorf("relais : trop de requêtes, réessaie dans %s s", resp.Header.Get("Retry-After"))
 	}
@@ -113,7 +119,7 @@ func (c *RelayClient) Deposit(writeID, blob []byte) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	if resp.StatusCode == http.StatusInsufficientStorage {
+	if resp.StatusCode == http.StatusInsufficientStorage && resp.Header.Get("X-Relay-Full") != "1" {
 		return 0, ErrQuotaFull
 	}
 	if resp.StatusCode != http.StatusCreated || len(data) != 8 {

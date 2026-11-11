@@ -41,6 +41,9 @@ class AppState(
     val relay: RelayRef,
     val contacts: MutableMap<String, Contact> = LinkedHashMap(),
 ) {
+    /** Durée de conservation de l'historique local, en secondes (0 = pour toujours). */
+    var historySeconds: Long = 0
+
     val ik: ByteArray get() = Ed25519.publicOf(identitySeed)
     val xk: ByteArray get() = X25519.publicOf(x25519Priv)
 
@@ -55,7 +58,7 @@ class AppState(
 /** Sérialisation binaire de l'état. Le chiffrement au repos est fait par l'appli (Keystore). */
 internal object StateCodec {
     private const val MAGIC = 0x50524E44 // "PRND"
-    private const val VERSION = 5 // v2 : bouton rouge ; v3 : notifications (retirées en v4) ; v5 : appairage en un scan
+    private const val VERSION = 6 // v2 : bouton rouge ; v3 : notifications (retirées en v4) ; v5 : appairage en un scan ; v6 : durée de l'historique
 
     fun encode(s: AppState): ByteArray {
         val bos = ByteArrayOutputStream()
@@ -64,6 +67,7 @@ internal object StateCodec {
             o.bytes(s.identitySeed); o.bytes(s.x25519Priv); o.relay(s.relay)
             o.writeInt(s.contacts.size)
             for (c in s.contacts.values) o.contact(c)
+            o.writeLong(s.historySeconds)
         }
         return bos.toByteArray()
     }
@@ -75,6 +79,7 @@ internal object StateCodec {
             require(version in 1..VERSION) { "version d'état inconnue" }
             val s = AppState(i.bytes(), i.bytes(), i.relay())
             repeat(i.readInt()) { val c = i.contact(version); s.contacts[c.name] = c }
+            if (version >= 6) s.historySeconds = i.readLong().coerceAtLeast(0)
             return s
         }
     }
