@@ -1,4 +1,4 @@
-# Paranoid — v1.0.0
+# Paranoid — v1.1.0
 
 *The Chat app for the truly paranoids.*
 
@@ -29,8 +29,10 @@ Documents de référence : `PROTOCOL.md` (client ↔ relais, contenu du QR), `ME
   Chez le destinataire, la conversation affiche l'alerte et n'accepte plus d'envoi.
 - **Changer mes codes** (menu ⋮) : le code actuel est exigé ; le code de destruction y déclenche le bouton rouge.
 - **Changer de relais** (menu ⋮) : volontairement sans migration, **tout est effacé**. Le code actuel est exigé (le code de destruction y déclenche le bouton rouge), puis le nouveau relais est testé : en cas d'échec, rien n'est touché. Chaque contact reçoit « X a changé de relais » et sa conversation se ferme. Ensuite : nouvelle identité, nouveaux codes, nouvel appairage avec chacun.
+- **Paramètres** (menu ⋮) : durée de conservation de l'historique sur un curseur (pour toujours, 1 an, 6 mois, 3 mois, 1 mois, 1 semaine, 3 jours, 24 heures). Les messages plus anciens sont effacés de ce téléphone au déverrouillage, à chaque relève et dès que le réglage change (confirmation avant d'effacer). Rien n'est effacé chez les contacts. Les alertes « bouton rouge » et « changement de relais » sont toujours gardées.
 - **Comprendre Paranoid** (menu ⋮) : fiches hors ligne avec schémas, à deux niveaux (simple, puis technique), sur l'identité, l'appairage, le relais, le chiffrement, les codes, le stockage, les notifications, le changement de relais, les limites, la vérification et un glossaire. *Mes infos en direct* affiche l'empreinte de sécurité, le relais et l'empreinte de son certificat, la protection de la clé (StrongBox, TEE ou logiciel) et l'empreinte du certificat de signature de l'APK.
 - **Clavier sans apprentissage** : chaque champ de saisie demande au clavier de ne rien apprendre ni mémoriser (`IME_FLAG_NO_PERSONALIZED_LEARNING`, mode incognito sur Gboard).
+- **Relais plein** : le relais refuse les nouvelles boîtes au-delà de 90 % de sa taille maximale, et les dépôts à 100 % ou quand le disque est presque plein ; l'appli affiche « le relais est plein ».
 - **Pas de notifications**, par choix de sécurité. Les messages attendent sur le relais (7 jours, 100 au maximum par contact) et arrivent quand l'appli est ouverte et déverrouillée.
 - **Sécurité locale** : état chiffré par une clé de données, dans un coffre à deux codes, lui-même chiffré par une clé non exportable du Keystore (StrongBox si disponible) ; `FLAG_SECURE` ; aucune sauvegarde.
 
@@ -44,11 +46,12 @@ Android 13 minimum.
 - **QR photographié** : quelqu'un qui photographie un QR et l'utilise avant le vrai contact est appairé à sa place. La comparaison des empreintes le révèle.
 - **Clavier** : la demande « sans apprentissage » peut être ignorée par un clavier tiers.
 - **Métadonnées** : le relais voit les adresses IP et les heures.
+- **Historique** : l'effacer ne l'efface que sur son propre téléphone. L'âge d'un message reçu est l'heure annoncée par l'expéditeur (jamais dans le futur).
 - **Pas encore de relecture de sécurité par un tiers.**
 
 ## Prochaines étapes
 
-Limite de l'historique, limite globale de la base du relais, paquet `.deb`, puis image ISO Debian pour héberger un relais.
+Paquet `.deb`, puis image ISO Debian pour héberger un relais.
 
 ---
 
@@ -71,10 +74,6 @@ Les artefacts se téléchargent depuis l'onglet *Actions* : ouvre l'exécution, 
 4. Une mise à jour s'installe par-dessus et **conserve identité et conversations**, grâce à la même clé de signature.
 
 Le relais est joignable sur le LAN (`https://192.168.1.252:8443`) et depuis Internet (`https://<IP_PUBLIQUE>`, port 443 de la box redirigé vers 8443). L'adresse choisie à la création de l'identité est celle qui figure dans les QR : pour être joignable en 4G, utilise l'adresse publique.
-
-### Passage de la v0.6 à la v1.0
-
-L'appairage a changé de format : les invitations des versions précédentes sont refusées. Les contacts déjà appairés continuent de fonctionner. Un contact resté « en attente » se termine en lui réaffichant le QR (il doit avoir la v1.0). Côté PC, mets à jour `relaycli` en même temps.
 
 ---
 
@@ -148,6 +147,9 @@ Tape un message puis Entrée. Les messages du téléphone s'affichent au fil de 
 | 15 | *Changer de relais* valide (par exemple du LAN vers l'adresse publique) | PC : « tel a changé de relais », envoi refusé. Téléphone : choix des codes, puis liste vide |
 | 16 | *Changer de relais* avec le code de destruction | Bouton rouge |
 | 17 | *Comprendre Paranoid → Mes infos en direct* | Empreinte et relais identiques à l'écran principal ; signature identique à `apksigner verify --print-certs` |
+| 18 | *Paramètres* : curseur sur « 24 heures » avec des messages plus anciens | Confirmation « Effacer N message(s) ? », puis messages effacés ; les cartes d'alerte restent |
+| 19 | Curseur sur « 24 heures », puis appli fermée plus de 24 h | Au déverrouillage, les messages de plus de 24 h ont disparu |
+| 20 | Relais lancé avec `--max-db 12K` (test seulement), puis plusieurs envois | « le relais est plein » après quelques messages (mesure toutes les 10 s) |
 
 Après les scénarios 11, 15 et 16 : `& $C -d pc remove tel`, supprimer le contact sur le téléphone, puis refaire l'appairage. Après le 13, le dossier `pc` est effacé : refais aussi l'`init`.
 
@@ -173,9 +175,20 @@ Après les scénarios 11, 15 et 16 : `& $C -d pc remove tel`, supprimer le conta
    systemctl restart relay
    journalctl -u relay -n 5 --no-pager
    ```
-   Le journal doit afficher « relais à l'écoute sur :8443 » avec l'empreinte `FB:2B:…:B0:EA`.
+   Le journal doit afficher « relais à l'écoute sur :8443 » avec l'empreinte `FB:2B:…:B0:EA`, suivie de « base max 1G, espace libre min 2G ».
 
-La v1.0 ne change rien côté relais : pas de mise à jour nécessaire pour la passer.
+### Régler le plafond global
+
+Par défaut, la base occupe 1 Gio au maximum et le relais garde 2 Gio libres sur le disque. Pour changer ces valeurs, ajoute les options à l'`ExecStart`, en `su -` :
+
+```bash
+systemctl edit --full relay
+# ExecStart=/opt/relay/relayd --listen :8443 --cert /etc/relay/relay.crt --key /etc/relay/relay.key --db /var/lib/relay/relay.db --max-db 5G --min-free 2G
+systemctl restart relay
+journalctl -u relay -n 3 --no-pager
+```
+
+Tailles acceptées : un nombre d'octets, ou avec un suffixe `K`, `M`, `G`, `T` (puissances de 1024). `0` désactive le contrôle. Le fichier SQLite ne rétrécit pas tout seul après une vague de messages. Pour le réduire, service arrêté : `apt install sqlite3`, puis `sqlite3 /var/lib/relay/relay.db VACUUM`.
 
 ## En cas de problème
 
@@ -189,3 +202,4 @@ La v1.0 ne change rien côté relais : pas de mise à jour nécessaire pour la p
 | « Données illisibles » au démarrage | La clé Keystore a disparu (appli désinstallée, par exemple). L'identité est perdue, c'est voulu. |
 | L'APK refuse de s'installer par-dessus | Signature différente (APK d'une compilation sans les secrets). Il faut désinstaller, ce qui perd l'identité. |
 | « Problème lors de l'analyse du package » | Le téléphone a une version d'Android antérieure à 13. |
+| « le relais est plein » | Plafond global atteint : `journalctl -u relay`, `du -h /var/lib/relay`, `df -h /`. Relever le plafond (`--max-db`) ou libérer de la place. |

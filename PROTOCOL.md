@@ -12,6 +12,8 @@ Messagerie sans compte : l'identité est une paire de clés générée sur le t�
 | Expiration d'une boîte | 90 jours sans relève authentifiée | |
 | Tolérance d'horodatage | ±60 s | Anti-rejeu avec nonce |
 | TLS | 1.3 minimum | Certificat auto-signé, épinglé (voir §6) |
+| Taille maximale de la base | 1 Gio (`--max-db`) | Espace occupé, pages libres non comptées ; voir §5 |
+| Espace disque libre minimal | 2 Gio (`--min-free`) | Voir §5 |
 
 L'historique d'une conversation est stocké uniquement sur les téléphones. Le relais ne conserve que les messages en transit.
 
@@ -74,9 +76,15 @@ Le relais rejette (401) si l'horodatage dépasse la tolérance, si le nonce a d�
 | 401 | Signature, horodatage ou nonce invalide |
 | 404 | Boîte inconnue ou expirée |
 | 429 | Limitation de débit (en-tête `Retry-After`) |
-| 507 | Quota de la boîte atteint : l'expéditeur réessaie plus tard |
+| 507 | Quota de la boîte atteint ; avec l'en-tête `X-Relay-Full: 1`, relais plein. L'expéditeur réessaie plus tard |
 
-Limites initiales : 10 créations de boîte par heure et par IP ; 60 dépôts par minute et par `write_id`.
+Limites de débit : 10 créations de boîte par heure et par IP ; 60 dépôts par minute et par `write_id`.
+
+Plafond global (mesures refaites au plus toutes les 10 s) :
+- dès 90 % de la taille maximale de la base, ou sous l'espace disque libre minimal : `POST /v1/box` répond 507 + `X-Relay-Full: 1` ;
+- à 100 % de la taille maximale, ou sous l'espace disque libre minimal : `PUT …/msg` répond 507 + `X-Relay-Full: 1`.
+
+Les nouvelles boîtes sont bloquées avant les dépôts, pour que les conversations existantes continuent le plus longtemps possible. `0` désactive l'un ou l'autre contrôle.
 
 ## 6. TLS et QR
 
@@ -103,5 +111,4 @@ Aucun journal d'accès applicatif. Pas de stockage d'adresses IP au-delà de la 
 ## 8. Points ouverts
 
 - Preuve de travail ou jeton pour la création de boîtes.
-- Limite globale de taille de la base.
 - Envoi redondant vers plusieurs relais et détection des pertes.
