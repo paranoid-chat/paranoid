@@ -1,4 +1,4 @@
-# Relais de messagerie (v0)
+# Relais Paranoid
 
 Implémentation de `../PROTOCOL.md` : boîtes aux lettres chiffrées de bout en bout, sans compte, sans journal d'accès. SQLite en Go pur (`modernc.org/sqlite`), donc un binaire statique sans CGO.
 
@@ -14,7 +14,7 @@ Implémentation de `../PROTOCOL.md` : boîtes aux lettres chiffrées de bout en 
 
 ## 1. Compiler (sur ton PC)
 
-Installe Go 1.24 ou plus récent (go.dev/dl), puis dans le dossier des sources, en PowerShell :
+La CI compile tout (voir le `README.md` principal). Pour compiler à la main : Go 1.26 ou plus récent (go.dev/dl), puis dans ce dossier, en PowerShell :
 
 ```powershell
 go mod tidy          # télécharge modernc.org/sqlite et crée go.sum
@@ -27,10 +27,10 @@ Si `go test` échoue, garde la sortie exacte et envoie-la.
 
 ## 2. Copier sur le serveur
 
-Avec `pscp` (livré avec PuTTY) et ta clé `.ppk` :
+OpenSSH est inclus dans Windows :
 
 ```powershell
-pscp -i C:\chemin\cle.ppk relayd matteo@192.168.1.252:/tmp/relayd
+scp .\relayd <utilisateur>@192.168.1.252:/tmp/relayd
 ```
 
 ## 3. Installer et démarrer (sur le serveur, en `su -`)
@@ -64,7 +64,7 @@ Les valeurs du protocole sont dans `DefaultConfig()` (`server.go`) : blob 2048 o
 
 ## Client de test `relaycli`
 
-Code dans `cmd/relaycli`, formats de message dans `../MESSAGES.md`. Les messages sont chiffrés avec le Double Ratchet (`dr.go`, format v2). Le client ne dépend que de la bibliothèque standard de Go.
+Code dans `cmd/relaycli`, formats dans `../MESSAGES.md` : appairage en un seul scan (`pair.go`, bloc version 3) et Double Ratchet (`dr.go`, bloc version 2). La crypto n'utilise que la bibliothèque standard de Go ; `go-qrcode` sert à afficher les QR.
 
 Si une session se désynchronise, les deux côtés font `relaycli reset NOM`.
 
@@ -75,7 +75,7 @@ go build -o relaycli ./cmd/relaycli
 
 Chaque identité vit dans un dossier (`-d alice`). Le fichier `state.json` contient les clés privées **en clair** : c'est un outil de test, à ne pas utiliser pour de vrais échanges.
 
-## Limites connues de cette v0
+## Limites connues
 
 - Les limites de débit et les nonces sont en mémoire : ils sont remis à zéro au redémarrage.
 - L'IP vue par le relais est celle de la connexion directe. Derrière un reverse proxy, la limitation par IP serait faussée.

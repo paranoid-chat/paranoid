@@ -1,24 +1,24 @@
-# Protocole relais v0
+# Protocole client ↔ relais
 
-Messagerie sans compte : l'identité est une paire de clés générée sur le téléphone. Les relais sont interchangeables et ne stockent que des blobs chiffrés. Ce document décrit uniquement le protocole client/relais et le contenu du QR. La cryptographie de messagerie (ratchet) est hors périmètre : le relais traite les blobs comme opaques.
+Messagerie sans compte : l'identité est une paire de clés générée sur le téléphone. Les relais sont interchangeables et ne stockent que des blobs chiffrés. Ce document décrit le protocole client/relais et le contenu du QR. Les formats chiffrés (appairage, Double Ratchet) sont dans `MESSAGES.md` : le relais traite les blobs comme opaques.
 
-## 1. Paramètres v1
+## 1. Paramètres
 
 | Paramètre | Valeur | Remarque |
 |---|---|---|
 | Taille d'un blob | 2048 octets exactement | Le client complète (padding) ; autre taille = rejet |
 | Quota par boîte | 100 messages en attente | Compte uniquement les messages non acquittés |
 | TTL d'un message | 7 jours | Un message non relevé est supprimé ; la boîte reste |
-| Expiration d'une boîte | 90 jours sans relève authentifiée | À valider |
+| Expiration d'une boîte | 90 jours sans relève authentifiée | |
 | Tolérance d'horodatage | ±60 s | Anti-rejeu avec nonce |
-| TLS | 1.3 minimum | Certificat auto-signé accepté en dev (voir §6) |
+| TLS | 1.3 minimum | Certificat auto-signé, épinglé (voir §6) |
 
 L'historique d'une conversation est stocké uniquement sur les téléphones. Le relais ne conserve que les messages en transit.
 
 ## 2. Identifiants
 
 - `box_id` : 16 octets aléatoires. Sert à relever et acquitter.
-- `write_id` : 16 octets aléatoires, distinct de `box_id`. Sert à déposer. Se transmet dans le QR.
+- `write_id` : 16 octets aléatoires, distinct de `box_id`. Sert à déposer. Se transmet dans le QR (invitant) ou dans le bloc d'appairage (celui qui scanne).
 - Clé de lecture de boîte : paire Ed25519 aléatoire, propre à chaque boîte (jamais la clé d'identité). Le relais n'en connaît que la partie publique.
 - Une boîte est créée par contact et par relais.
 
@@ -82,18 +82,19 @@ Limites initiales : 10 créations de boîte par heure et par IP ; 60 dépôts pa
 
 Le client épingle le certificat du relais par l'empreinte SHA-256 du certificat DER, fournie dans le QR. Aucune autorité de certification n'est requise (adresse IP ou nom DDNS possibles).
 
-Contenu du QR v1 (JSON compact encodé en base64url) :
+Contenu du QR, version 2 (JSON compact encodé en base64url, octets en base64url sans padding) :
 
 ```
-{ "v": 1,
+{ "v": 2,
   "ik": <clé publique Ed25519 d'identité, 32 octets>,
   "xk": <clé publique X25519, 32 octets>,
-  "r": [ { "u": "https://hote:port", "fp": <SHA-256, 32 octets>, "w": <write_id, 16 octets> } ] }
+  "r": [ { "u": "https://hote[:port]", "fp": <SHA-256, 32 octets>, "w": <write_id, 16 octets> } ],
+  "s": <secret d'appairage à usage unique, 32 octets> }
 ```
 
-Le QR est **propre à un contact** : avant de l'afficher, le téléphone crée une boîte dédiée sur chaque relais listé (1 à 3), puis place les `write_id` correspondants dans le QR.
+Le QR est **propre à un contact** : avant de l'afficher, le téléphone crée une boîte dédiée et tire un secret, puis place le `write_id` et le secret dans le QR. Il s'affiche avec `FLAG_SECURE`. Un relais est listé (le format en accepte 1 à 3).
 
-Échange v1 : double scan (A scanne B, puis B scanne A). Chaque QR doit être affiché avec `FLAG_SECURE`.
+**Appairage en un seul scan** : celui qui scanne crée sa propre boîte pour l'invitant, puis dépose dans la boîte de l'invitant (`PUT /v1/box/{w}/msg`) un bloc d'appairage de 2048 octets qui contient ses clés et son `write_id` (format dans `MESSAGES.md`). L'invitant le reçoit à sa prochaine relève ; le secret est alors effacé.
 
 ## 7. Journalisation du relais
 
@@ -101,7 +102,6 @@ Aucun journal d'accès applicatif. Pas de stockage d'adresses IP au-delà de la 
 
 ## 8. Points ouverts
 
-- Choix du protocole de messagerie (ratchet) : décidé au client CLI.
 - Preuve de travail ou jeton pour la création de boîtes.
+- Limite globale de taille de la base.
 - Envoi redondant vers plusieurs relais et détection des pertes.
-- Secret à usage unique pour remplacer le double scan (v2).

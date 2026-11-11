@@ -1,52 +1,54 @@
-# Paranoid — v0.6.0
+# Paranoid — v1.0.0
 
 *The Chat app for the truly paranoids.*
 
-Messagerie sans compte : l'identité est une paire de clés créée sur le téléphone, qui ne le quitte jamais. Les contacts s'ajoutent par échange de QR en face à face. Les messages passent par un relais interchangeable qui ne voit que des blocs chiffrés de taille fixe (voir `PROTOCOL.md` et `MESSAGES.md`).
+Messagerie Android sans compte : l'identité est une paire de clés créée sur le téléphone, qui ne le quitte jamais. Les contacts s'ajoutent par un scan de QR en face à face. Les messages passent par un relais interchangeable qui ne voit que des blocs chiffrés de 2048 octets.
+
+Documents de référence : `PROTOCOL.md` (client ↔ relais, contenu du QR), `MESSAGES.md` (appairage, Double Ratchet, types de message), `relay/README.md` (compiler et tester le relais).
 
 ## Structure du dépôt
 
 | Dossier | Contenu |
 |---|---|
-| `app/` | Appli Android (Compose, Material 3) : écrans, QR (zxing, sans Google Play Services), stockage chiffré par le Keystore. |
-| `core/` | Kotlin pur (JVM) : crypto, Double Ratchet, coffre à deux codes, invitations, client du relais avec épinglage du certificat, sérialisation de l'état. Testé sur JVM et contre le relais Go. |
-| `relay/` | Relais Go (SQLite) et `relaycli`, le client de test en ligne de commande (Linux et Windows). |
+| `app/` | Appli Android (Compose, Material 3) : écrans, QR (zxing, sans Google Play Services), stockage chiffré par le Keystore, menu *Comprendre Paranoid*. |
+| `core/` | Kotlin pur (JVM) : crypto, appairage, Double Ratchet, coffre à deux codes, invitations, client du relais avec épinglage du certificat, sérialisation de l'état. Testé sur JVM et contre le Go. |
+| `relay/` | Relais Go (`relayd`, SQLite) et `relaycli`, le client de test en ligne de commande (Linux et Windows). |
 
-## Ce que fait la v0.6
+## Fonctionnalités
 
-- **Identité** : créée au premier lancement, après un test du relais (TLS et empreinte).
-- **Contacts** : nom local, puis affichage de mon QR, puis scan du sien. Avec un PC sans caméra, l'invitation peut aussi être partagée en texte. L'empreinte de sécurité est à comparer de vive voix.
+- **Identité** : créée au premier lancement, après un test du relais (TLS et empreinte du certificat).
+- **Appairage en un seul scan** : l'un affiche son QR, l'autre le scanne en face à face. Le téléphone qui scanne envoie ses clés par le relais, chiffrées par un secret à usage unique contenu dans le QR et signées par sa clé d'identité ; l'appairage se termine tout seul chez celui qui a affiché le QR. Les empreintes sont ensuite à comparer de vive voix. Avec un PC sans caméra, l'invitation passe en texte.
 - **Messages** : texte chiffré par le Double Ratchet, 1963 octets maximum.
-- **Code de déverrouillage** : Argon2id (64 Mio, 3 passes). Les essais sont temporisés à partir de 5 échecs (30 s, puis doublement). L'appli se verrouille avec le cadenas, ou après 60 s en arrière-plan.
-- **Code de destruction (bouton rouge)**, saisi à la place du code normal. L'appli fait **comme si le code était bon** : elle s'ouvre sur une liste de contacts vide, comme une appli dont on aurait tout supprimé. En arrière-plan :
+- **Code de déverrouillage** : Argon2id (64 Mio, 3 passes). Après 5 échecs, attente de 30 s, doublée à chaque échec (1 h maximum). Verrouillage avec le cadenas, ou après 60 s en arrière-plan.
+- **Code de destruction (bouton rouge)**, saisi à la place du code normal. L'appli fait **comme si le code était bon** et s'ouvre sur une liste de contacts vide. En arrière-plan :
   1. la clé Keystore et le coffre sont détruits ;
-  2. une nouvelle identité est créée, et le code qui vient d'être saisi devient son code de déverrouillage (le rouvrir avec ce code donne la même appli vide) ;
+  2. une nouvelle identité est créée ; le code qui vient d'être saisi devient son code de déverrouillage, son code de destruction est aléatoire (à redéfinir dans *Changer mes codes*) ;
   3. depuis la mémoire, l'alerte « X a utilisé le bouton rouge » part chez tous les contacts (5 s maximum) ;
-  4. l'ancien état est oublié.
+  4. l'ancien état est effacé de la mémoire.
 
-  Le code de destruction de la nouvelle identité est aléatoire : il faut en définir un vrai dans *Changer mes codes*. Chez le destinataire, la conversation affiche l'alerte et n'accepte plus d'envoi.
-- **Changer mes codes** (menu ⋮ de la liste des contacts) : le code actuel est exigé. Le code de destruction saisi dans ce champ déclenche lui aussi le bouton rouge.
-- **Changer de relais** (menu ⋮) : volontairement sans migration, **tout est effacé**. Le code actuel est exigé (le code de destruction y déclenche le bouton rouge), puis le nouveau relais est testé (TLS et empreinte) : en cas d'échec, rien n'est touché. Chaque contact reçoit « X a changé de relais » (5 s maximum) et sa conversation se ferme. Ensuite : nouvelle identité sur le nouveau relais, nouveaux codes, nouvel échange de QR avec chacun.
-- **Comprendre Paranoid** (menu ⋮) : fiches hors ligne, avec schémas, sur les clés, l'empreinte, le relais, le chiffrement, les codes, le stockage, les notifications, le changement de relais, les limites, la vérification et un glossaire. Chaque fiche a un niveau simple et un détail technique (« En savoir plus »). *Mes infos en direct* affiche mon empreinte, le relais et l'empreinte de son certificat, la protection de la clé (StrongBox, TEE ou logiciel) et l'empreinte du certificat qui a signé l'APK.
-- **Pas de notifications**, par choix de sécurité. Les messages attendent sur le relais (jusqu'à 7 jours, 100 au maximum par contact) et arrivent quand l'appli est ouverte et déverrouillée.
-- **Sécurité locale** :
-  - état chiffré par une clé de données, dans un coffre à deux codes, lui-même chiffré par une clé non exportable du Keystore (StrongBox si disponible) ;
-  - `FLAG_SECURE` (pas de capture d'écran, pas d'aperçu dans les applis récentes) ;
-  - aucune sauvegarde.
+  Chez le destinataire, la conversation affiche l'alerte et n'accepte plus d'envoi.
+- **Changer mes codes** (menu ⋮) : le code actuel est exigé ; le code de destruction y déclenche le bouton rouge.
+- **Changer de relais** (menu ⋮) : volontairement sans migration, **tout est effacé**. Le code actuel est exigé (le code de destruction y déclenche le bouton rouge), puis le nouveau relais est testé : en cas d'échec, rien n'est touché. Chaque contact reçoit « X a changé de relais » et sa conversation se ferme. Ensuite : nouvelle identité, nouveaux codes, nouvel appairage avec chacun.
+- **Comprendre Paranoid** (menu ⋮) : fiches hors ligne avec schémas, à deux niveaux (simple, puis technique), sur l'identité, l'appairage, le relais, le chiffrement, les codes, le stockage, les notifications, le changement de relais, les limites, la vérification et un glossaire. *Mes infos en direct* affiche l'empreinte de sécurité, le relais et l'empreinte de son certificat, la protection de la clé (StrongBox, TEE ou logiciel) et l'empreinte du certificat de signature de l'APK.
+- **Clavier sans apprentissage** : chaque champ de saisie demande au clavier de ne rien apprendre ni mémoriser (`IME_FLAG_NO_PERSONALIZED_LEARNING`, mode incognito sur Gboard).
+- **Pas de notifications**, par choix de sécurité. Les messages attendent sur le relais (7 jours, 100 au maximum par contact) et arrivent quand l'appli est ouverte et déverrouillée.
+- **Sécurité locale** : état chiffré par une clé de données, dans un coffre à deux codes, lui-même chiffré par une clé non exportable du Keystore (StrongBox si disponible) ; `FLAG_SECURE` ; aucune sauvegarde.
 
-## Pas encore fait
-
-- Clavier sans apprentissage pour les messages.
-- Plusieurs relais, et limitation de l'historique conservé.
-- Appairage en un seul scan.
-- Relecture de sécurité par un tiers.
+Android 13 minimum.
 
 ## Limites connues
 
-- **Code de destruction détectable** : le coffre contient deux emplacements. Quelqu'un qui analyse les fichiers voit qu'il existe deux codes, sans savoir lequel détruit.
-- **Compteur d'essais contournable** : il est stocké dans un fichier, qu'un attaquant ayant les droits root pourrait restaurer.
-- **Alerte sans réseau** : si le téléphone n'a pas de réseau au moment du bouton rouge, l'alerte ne part pas, mais la destruction a lieu quand même.
-- **Empreinte changée après le bouton rouge** : la nouvelle identité a une autre empreinte de sécurité. Seul quelqu'un qui connaissait l'ancienne peut le remarquer.
+- **Code de destruction détectable** : le coffre contient deux emplacements. Une analyse des fichiers montre qu'il existe deux codes, sans dire lequel détruit.
+- **Compteur d'essais contournable** : il est stocké dans un fichier, qu'un attaquant root pourrait restaurer.
+- **Alerte sans réseau** : sans réseau au moment du bouton rouge, l'alerte ne part pas, mais la destruction a lieu.
+- **QR photographié** : quelqu'un qui photographie un QR et l'utilise avant le vrai contact est appairé à sa place. La comparaison des empreintes le révèle.
+- **Clavier** : la demande « sans apprentissage » peut être ignorée par un clavier tiers.
+- **Métadonnées** : le relais voit les adresses IP et les heures.
+- **Pas encore de relecture de sécurité par un tiers.**
+
+## Prochaines étapes
+
+Limite de l'historique, limite globale de la base du relais, paquet `.deb`, puis image ISO Debian pour héberger un relais.
 
 ---
 
@@ -56,19 +58,23 @@ Chaque push sur `main` déclenche la CI :
 
 | Exécution | Artefact | Contenu |
 |---|---|---|
-| **Android** | `paranoid-apk` | APK signé avec la clé du dépôt (secrets `PARANOID_*`) + `SHA256SUMS` |
+| **Android** (hors `relay/` et `*.md`) | `paranoid-apk` | APK signé avec la clé du dépôt (secrets `PARANOID_*`) + `SHA256SUMS` |
 | **Relais** (si `relay/` change) | `relais-binaires` | `relayd-linux-amd64`, `relayd-linux-arm64`, `relaycli-linux-*`, `relaycli-windows-amd64.exe` + `SHA256SUMS` |
 
 Les artefacts se téléchargent depuis l'onglet *Actions* : ouvre l'exécution, puis la section *Artifacts* en bas de page. Ils sont conservés 14 jours.
 
 ## Installer l'APK sur le téléphone
 
-1. Télécharge `paranoid-apk` depuis la dernière exécution **Android**, puis décompresse-le.
+1. Télécharge `paranoid-apk` depuis la dernière exécution **Android**, puis décompresse-le. Vérifie l'empreinte : `Get-FileHash .\paranoid-*.apk -Algorithm SHA256` doit donner la valeur de `SHA256SUMS`.
 2. Copie `paranoid-<version>-<commit>.apk` sur le téléphone et ouvre-le avec *Mes fichiers*. Autorise « Installer des applis inconnues » pour *Mes fichiers*.
 3. Sur un Samsung, désactive la **Protection automatique** (*Paramètres → Sécurité et confidentialité*) le temps de l'installation.
-4. Une mise à jour s'installe par-dessus la version précédente et **conserve identité et conversations**, grâce à la même clé de signature.
+4. Une mise à jour s'installe par-dessus et **conserve identité et conversations**, grâce à la même clé de signature.
 
-Le relais est joignable sur le LAN (`https://192.168.1.252:8443`) et depuis Internet (`https://2.15.30.5`, port 443 redirigé par la box vers 8443). L'adresse choisie à la création de l'identité est celle qui figure dans tes QR : pour être joignable en 4G, il faut l'adresse publique.
+Le relais est joignable sur le LAN (`https://192.168.1.252:8443`) et depuis Internet (`https://<IP_PUBLIQUE>`, port 443 de la box redirigé vers 8443). L'adresse choisie à la création de l'identité est celle qui figure dans les QR : pour être joignable en 4G, utilise l'adresse publique.
+
+### Passage de la v0.6 à la v1.0
+
+L'appairage a changé de format : les invitations des versions précédentes sont refusées. Les contacts déjà appairés continuent de fonctionner. Un contact resté « en attente » se termine en lui réaffichant le QR (il doit avoir la v1.0). Côté PC, mets à jour `relaycli` en même temps.
 
 ---
 
@@ -84,7 +90,7 @@ Le PC joue le rôle du second téléphone, grâce à `relaycli`.
    cd C:\Users\Admin\Documents\Paranoid
    Unblock-File .\relaycli-windows-amd64.exe
    $C = ".\relaycli-windows-amd64.exe"
-   & $C -d pc init --relay https://192.168.1.252:8443 --fp FB:2B:01:81:C4:A7:E4:EA:3C:C9:DE:31:EA:A4:96:5A:D4:7E:C0:D6:F6:B7:4B:91:4F:DD:FB:FC:89:C6:B0:EA
+   & $C -d pc init --relay https://<IP_PUBLIQUE> --fp FB:2B:01:81:C4:A7:E4:EA:3C:C9:DE:31:EA:A4:96:5A:D4:7E:C0:D6:F6:B7:4B:91:4F:DD:FB:FC:89:C6:B0:EA
    ```
    La commande doit répondre « Relais joignable, empreinte vérifiée ». Elle crée l'identité du PC dans le dossier `pc`.
 
@@ -92,26 +98,26 @@ Le PC joue le rôle du second téléphone, grâce à `relaycli`.
 
 ### Appairage PC ↔ téléphone
 
-S'il existait déjà un appairage, supprime-le d'abord des deux côtés :
+S'il existait déjà un contact, supprime-le d'abord des deux côtés :
 - sur le PC : `& $C -d pc remove tel` ;
 - sur le téléphone : ouvre la conversation, menu ⋮, puis *Supprimer le contact*.
 
-Fais ensuite l'appairage **d'une traite, sans revenir en arrière sur le téléphone** :
+**Le téléphone affiche, le PC « scanne »** (le plus simple) :
 
-1. **Téléphone :** *+*, puis le nom `pc`, puis *Afficher mon QR*, puis *Partager*. Envoie le texte vers le PC (Quick Share, Lien avec Windows, ou un mail à toi-même).
+1. **Téléphone :** *+*, nom `pc`, *Afficher mon QR*, puis *Partager*. Envoie le texte vers le PC (Quick Share, Lien avec Windows, ou un mail à toi-même).
 2. **PC :** copie ce texte dans le presse-papiers, puis :
    ```powershell
    Get-Clipboard | & $C -d pc add tel -
    ```
-3. **PC :**
-   ```powershell
-   & $C -d pc invite --qr tel
-   ```
-   Si le QR s'affiche mal dans le terminal, utilise `& $C -d pc invite --png qr.png tel`, puis `start qr.png`.
-4. **Téléphone,** sur ce même écran : *Scanner son QR*, puis vise le QR du PC.
-5. **Vérifier les empreintes :**
-   - l'empreinte de `tel` affichée par le PC à l'étape 2 doit être « Mon empreinte » sur le téléphone ;
-   - l'empreinte de `pc` affichée par le téléphone doit être celle donnée par `& $C -d pc whoami`.
+3. **Téléphone :** l'écran passe tout seul à « Appairage terminé » en quelques secondes.
+4. **Vérifier les empreintes** : celle de `tel` affichée par le PC = « Mon empreinte » sur le téléphone ; celle de `pc` affichée par le téléphone = `& $C -d pc whoami`.
+
+**Le PC affiche, le téléphone scanne** :
+
+1. **PC :** `& $C -d pc invite --qr tel` (si le QR s'affiche mal : `& $C -d pc invite --png qr.png tel`, puis `start qr.png`).
+2. **Téléphone :** *+*, nom `pc`, *Scanner son QR*, vise le QR du PC. La discussion s'ouvre.
+3. **PC :** `& $C -d pc recv` affiche « Appairage avec tel terminé ».
+4. Vérifier les empreintes comme ci-dessus.
 
 ### Discuter
 
@@ -119,46 +125,47 @@ Fais ensuite l'appairage **d'une traite, sans revenir en arrière sur le télép
 & $C -d pc chat tel
 ```
 
-Tape un message puis Entrée. Les messages du téléphone s'affichent au fil de l'eau (relève toutes les 3 s), et `/quit` permet de quitter. Côté téléphone, l'appli relève toutes les 5 s quand elle est ouverte et déverrouillée.
-
-N'ouvre qu'**une seule** fenêtre `relaycli` à la fois sur le dossier `pc`. Deux processus simultanés désynchronisent la session.
+Tape un message puis Entrée. Les messages du téléphone s'affichent au fil de l'eau (relève toutes les 3 s), `/quit` pour quitter. Côté téléphone, l'appli relève toutes les 5 s quand elle est ouverte et déverrouillée. N'ouvre qu'une seule fenêtre `relaycli` à la fois sur le dossier `pc`.
 
 ### Scénarios de test
 
 | # | Scénario | Attendu |
 |---|---|---|
-| 1 | Messages dans les deux sens pendant le `chat` | Arrivée en quelques secondes |
-| 2 | Téléphone verrouillé, puis le PC envoie 3 messages, puis déverrouillage | Les 3 messages arrivent, dans l'ordre |
-| 3 | Cadenas, puis déverrouillage avec le code | Retour à la liste des contacts |
-| 4 | 5 mauvais codes | Temporisation de 30 s |
-| 5 | Appli en arrière-plan plus de 60 s | Reverrouillée au retour |
-| 6 | Installer une nouvelle version par-dessus | Identité et conversations conservées |
-| 7 | Pendant le `chat`, verrouiller le téléphone puis saisir le **code de destruction** | Téléphone : s'ouvre comme déverrouillé, sur une liste de contacts vide (empreinte différente). PC : alerte « tel a utilisé le bouton rouge », puis envoi refusé |
-| 7 bis | Verrouiller, puis rouvrir avec le même code de destruction | Même appli vide, sans incohérence. Puis *Changer mes codes* avec ce code comme code actuel |
-| 8 | `& $C -d pc panic --oui` (bouton rouge côté PC) | Téléphone : alerte dans la conversation, saisie remplacée par « Supprimer la conversation » |
-| 9 | Téléphone : ⋮, *Changer de relais*, avec une **mauvaise empreinte** | « empreinte du relais inattendue », rien n'est effacé |
-| 10 | Même chose avec la bonne adresse et la bonne empreinte (par exemple passer du LAN à `https://2.15.30.5`) | PC (`recv` ou `chat`) : « tel a changé de relais », puis envoi refusé. Téléphone : écran de choix des codes, puis liste vide avec une nouvelle empreinte |
-| 11 | *Changer de relais* avec le **code de destruction** comme code actuel | Bouton rouge : alerte « bouton rouge » côté PC, appli vide côté téléphone |
-| 12 | ⋮, *Comprendre Paranoid*, puis *Mes infos en direct* | Empreinte et relais identiques à l'écran principal ; empreinte de signature identique à `apksigner verify --print-certs` |
+| 1 | Appairage, le téléphone affiche son QR | Téléphone : « Appairage terminé » sans autre action ; empreintes identiques des deux côtés |
+| 2 | Appairage, le PC affiche son QR | Téléphone : discussion ouverte après le scan ; PC (`recv`) : « Appairage terminé » |
+| 3 | Réutiliser une invitation déjà servie (`add` une seconde fois, sous un autre nom) | Refus |
+| 4 | Messages dans les deux sens pendant `chat` | Arrivée en quelques secondes |
+| 5 | Téléphone verrouillé, le PC envoie 3 messages, puis déverrouillage | Les 3 messages arrivent, dans l'ordre |
+| 6 | Cadenas, puis déverrouillage | Retour à la liste des contacts |
+| 7 | 5 mauvais codes | Attente de 30 s |
+| 8 | Appli en arrière-plan plus de 60 s | Reverrouillée au retour |
+| 9 | Installer une nouvelle version par-dessus | Identité et conversations conservées |
+| 10 | Gboard : taper un mot inhabituel dans un message | Gboard affiche le mode incognito ; le mot n'est pas proposé ensuite dans d'autres applis |
+| 11 | Pendant le `chat`, verrouiller le téléphone puis saisir le **code de destruction** | Téléphone : liste de contacts vide, empreinte différente. PC : alerte « tel a utilisé le bouton rouge », puis envoi refusé |
+| 12 | Rouvrir avec le même code de destruction | Même appli vide ; puis *Changer mes codes* avec ce code comme code actuel |
+| 13 | `& $C -d pc panic --oui` (bouton rouge côté PC) | Téléphone : alerte dans la conversation, saisie remplacée par « Supprimer la conversation » |
+| 14 | *Changer de relais* avec une mauvaise empreinte | « empreinte du relais inattendue », rien n'est effacé |
+| 15 | *Changer de relais* valide (par exemple du LAN vers l'adresse publique) | PC : « tel a changé de relais », envoi refusé. Téléphone : choix des codes, puis liste vide |
+| 16 | *Changer de relais* avec le code de destruction | Bouton rouge |
+| 17 | *Comprendre Paranoid → Mes infos en direct* | Empreinte et relais identiques à l'écran principal ; signature identique à `apksigner verify --print-certs` |
 
-Après le scénario 7, supprime le contact côté PC (`& $C -d pc remove tel`), puis refais l'appairage avec la nouvelle identité du téléphone. Après les scénarios 10 et 11, même chose. Après le scénario 8, le dossier `pc` est effacé : refais l'`init`, supprime le contact sur le téléphone, puis refais l'appairage.
+Après les scénarios 11, 15 et 16 : `& $C -d pc remove tel`, supprimer le contact sur le téléphone, puis refaire l'appairage. Après le 13, le dossier `pc` est effacé : refais aussi l'`init`.
 
 ### Diagnostic
 
+- `& $C -d pc contacts` : état de chaque contact (en attente de scan, empreinte, conversation fermée).
 - `& $C -d pc debug tel` : état de la session (rôle, compteurs), sans rien de secret.
 - Une ligne « message n° X rejeté » de `relaycli` indique le type de chaîne et les numéros du bloc.
-- Si les messages ne passent plus, deux solutions :
-  - réinitialiser la session des deux côtés : menu ⋮, puis *Réinitialiser la session* sur le téléphone, et `& $C -d pc reset tel` sur le PC ;
-  - ou refaire l'appairage.
+- Si les messages ne passent plus : *Réinitialiser la session* sur le téléphone (menu ⋮) et `& $C -d pc reset tel`, ou refaire l'appairage.
 
 ---
 
-## Mettre à jour le relais (VM `caparanoid01`)
+## Mettre à jour le relais (VM du relais)
 
 1. Télécharge `relais-binaires` depuis la dernière exécution **Relais**.
 2. Copie `relayd-linux-amd64` sur la VM (OpenSSH est inclus dans Windows) :
    ```powershell
-   scp .\relayd-linux-amd64 matteo@192.168.1.252:/tmp/
+   scp .\relayd-linux-amd64 <utilisateur>@192.168.1.252:/tmp/
    ```
 3. Installe-le sur la VM, en `su -` :
    ```bash
@@ -168,12 +175,17 @@ Après le scénario 7, supprime le contact côté PC (`& $C -d pc remove tel`), 
    ```
    Le journal doit afficher « relais à l'écoute sur :8443 » avec l'empreinte `FB:2B:…:B0:EA`.
 
+La v1.0 ne change rien côté relais : pas de mise à jour nécessaire pour la passer.
+
 ## En cas de problème
 
 | Symptôme | Cause probable |
 |---|---|
 | « Relais injoignable » | Adresse LAN utilisée hors du Wi-Fi, redirection de la box absente, ou service `relay` arrêté (`systemctl status relay`). |
 | « empreinte du relais inattendue » | L'empreinte saisie ne correspond pas au certificat du relais. |
-| Message « rejeté » côté PC, ou message jamais reçu | Appairage réparti sur deux contacts côté téléphone, ou deux `relaycli` ouverts en même temps. Refais l'appairage d'une traite. |
+| « version d'invitation non prise en charge » | L'autre côté n'a pas la v1.0 (appli ou `relaycli`). |
+| Le téléphone reste « En attente du scan » | L'autre n'a pas encore scanné, ou son envoi a échoué (il voit une erreur) : il recommence le scan. |
+| Message « rejeté » côté PC | Deux `relaycli` ouverts en même temps, ou session désynchronisée : réinitialiser la session ou refaire l'appairage. |
 | « Données illisibles » au démarrage | La clé Keystore a disparu (appli désinstallée, par exemple). L'identité est perdue, c'est voulu. |
 | L'APK refuse de s'installer par-dessus | Signature différente (APK d'une compilation sans les secrets). Il faut désinstaller, ce qui perd l'identité. |
+| « Problème lors de l'analyse du package » | Le téléphone a une version d'Android antérieure à 13. |
