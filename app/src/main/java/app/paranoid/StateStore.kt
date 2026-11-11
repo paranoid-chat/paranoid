@@ -84,13 +84,22 @@ class StateStore(context: Context) {
         val key = dek ?: error("aucune clé de données en mémoire")
         val box = LockBox.create(key, unlockCode, duressCode)
         save(state)
-        val c = Cipher.getInstance("AES/GCM/NoPadding")
-        c.init(Cipher.ENCRYPT_MODE, keystoreKey(create = true))
-        c.updateAAD(AAD_LOCK)
-        write(lockFile, c.iv + c.doFinal(box))
+        writeBox(box)
         resetAttempts()
         legacyDek.delete()
         legacyState.delete()
+    }
+
+    /**
+     * Remplace les deux codes, après vérification du code actuel. Si le code actuel saisi est le
+     * code de destruction, renvoie [UnlockResult.Duress] : le bouton rouge s'applique partout.
+     */
+    @Synchronized
+    fun changeCodes(current: String, unlockCode: String, duressCode: String): UnlockResult {
+        LockBox.validateCodes(unlockCode, duressCode)
+        val r = unlock(current)
+        if (r is UnlockResult.Unlocked) writeBox(LockBox.create(dek!!, unlockCode, duressCode))
+        return r
     }
 
     /** Essaie un code. Les deux emplacements du coffre sont toujours essayés (temps constant). */
@@ -146,6 +155,14 @@ class StateStore(context: Context) {
         runCatching { keyStore().deleteEntry(ALIAS) }
         lock()
         for (f in listOf(stateFile, lockFile, attemptsFile, legacyDek, legacyState)) runCatching { f.delete() }
+    }
+
+    /** Chiffre le coffre par la clé Keystore et l'écrit (création de la clé si besoin). */
+    private fun writeBox(box: ByteArray) {
+        val c = Cipher.getInstance("AES/GCM/NoPadding")
+        c.init(Cipher.ENCRYPT_MODE, keystoreKey(create = true))
+        c.updateAAD(AAD_LOCK)
+        write(lockFile, c.iv + c.doFinal(box))
     }
 
     // ---------- fichiers ----------

@@ -47,12 +47,15 @@ class MainActivity : ComponentActivity() {
         setContent {
             ParanoidTheme {
                 val ui by vm.ui.collectAsStateWithLifecycle()
-                BackHandler(enabled = ui.screen is Screen.Chat || ui.screen is Screen.AddContact) { vm.goContacts() }
+                BackHandler(enabled = ui.screen is Screen.Chat || ui.screen is Screen.AddContact || ui.screen is Screen.ChangeCodes) {
+                    vm.goContacts()
+                }
                 when (val s = ui.screen) {
                     Screen.Loading -> LoadingScreen()
                     Screen.Setup -> SetupScreen(ui, vm)
                     is Screen.SetCodes -> SetCodesScreen(s.migrating, ui, vm)
                     Screen.Locked -> LockScreen(ui, vm)
+                    Screen.ChangeCodes -> ChangeCodesScreen(ui, vm)
                     Screen.Contacts -> ContactsScreen(ui, vm)
                     Screen.AddContact -> AddContactScreen(ui, vm)
                     is Screen.Chat -> ChatScreen(s.name, ui, vm)

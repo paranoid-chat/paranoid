@@ -218,7 +218,14 @@ fun ContactsScreen(ui: Ui, vm: MainViewModel) {
         topBar = {
             TopAppBar(
                 title = { Text("Paranoid") },
-                actions = { IconButton(onClick = vm::lock) { Icon(Icons.Default.Lock, "Verrouiller") } },
+                actions = {
+                    IconButton(onClick = vm::lock) { Icon(Icons.Default.Lock, "Verrouiller") }
+                    var menu by remember { mutableStateOf(false) }
+                    IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "Options") }
+                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        DropdownMenuItem(text = { Text("Changer mes codes") }, onClick = { menu = false; vm.goChangeCodes() })
+                    }
+                },
             )
         },
         floatingActionButton = {
@@ -534,6 +541,48 @@ fun LockScreen(ui: Ui, vm: MainViewModel) {
             Button(onClick = submit, enabled = code.isNotEmpty() && !ui.busy, modifier = Modifier.fillMaxWidth()) {
                 Text(if (ui.busy) "Vérification…" else "Déverrouiller")
             }
+        }
+    }
+    Messages(ui, vm)
+}
+
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ChangeCodesScreen(ui: Ui, vm: MainViewModel) {
+    var cur by remember { mutableStateOf("") }
+    var u1 by remember { mutableStateOf("") }
+    var u2 by remember { mutableStateOf("") }
+    var d1 by remember { mutableStateOf("") }
+    var d2 by remember { mutableStateOf("") }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Changer mes codes") },
+                navigationIcon = { IconButton(onClick = { vm.goContacts() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Retour") } },
+            )
+        },
+    ) { pad ->
+        Column(
+            Modifier.padding(pad).verticalScroll(rememberScrollState())
+                .windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars)).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            CodeField(cur, { cur = it }, "Code actuel")
+            HorizontalDivider()
+            Text("Nouveau code de déverrouillage (au moins ${vm.minCode} caractères).")
+            CodeField(u1, { u1 = it }, "Nouveau code de déverrouillage")
+            CodeField(u2, { u2 = it }, "Confirme le nouveau code de déverrouillage")
+            HorizontalDivider()
+            Text("Nouveau code de destruction (bouton rouge) : à la place du code normal, il alerte tous tes contacts, " +
+                "détruit ta clé privée et efface tout.", color = MaterialTheme.colorScheme.error)
+            CodeField(d1, { d1 = it }, "Nouveau code de destruction")
+            CodeField(d2, { d2 = it }, "Confirme le nouveau code de destruction")
+            Button(
+                onClick = { vm.changeCodes(cur, u1, u2, d1, d2); cur = ""; u1 = ""; u2 = ""; d1 = ""; d2 = "" },
+                enabled = cur.isNotEmpty() && !ui.busy,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text(if (ui.busy) "Chiffrement…" else "Enregistrer") }
         }
     }
     Messages(ui, vm)

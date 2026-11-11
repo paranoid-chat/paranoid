@@ -11,6 +11,7 @@ import app.paranoid.core.MessageStatus
 import app.paranoid.core.Messenger
 import app.paranoid.core.RelayRef
 import app.paranoid.core.b64
+import app.paranoid.core.randomBytes
 import app.paranoid.core.parseFingerprint
 import app.paranoid.core.safetyNumber
 import kotlinx.coroutines.Dispatchers
@@ -28,6 +29,7 @@ sealed interface Screen {
     data object Loading : Screen
     data object Setup : Screen
     data class SetCodes(val migrating: Boolean) : Screen
+    data object ChangeCodes : Screen
     data object Locked : Screen
     data object Contacts : Screen
     data object AddContact : Screen
@@ -200,7 +202,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 messenger = Messenger(store.load(), ::persist)
                 refresh(Screen.Contacts)
             }
-            StateStore.UnlockResult.Duress -> redButton()
+            StateStore.UnlockResult.Duress -> redButton(code)
             is StateStore.UnlockResult.Wrong ->
                 error(if (r.waitSeconds > 0) "Code incorrect. Prochain essai dans ${r.waitSeconds} s." else "Code incorrect.")
             is StateStore.UnlockResult.Throttled -> error("Trop d'essais. Réessaie dans ${r.waitSeconds} s.")
@@ -208,19 +210,51 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Code de destruction. L'écran ressemble aussitôt à une appli vierge. Puis, sans interruption
-     * possible : état chargé en mémoire, clé Keystore et coffre détruits (plus rien n'est
-     * déchiffrable sur le disque), alertes envoyées depuis la mémoire (5 s maximum), effacement
-     * du reste.
+     * Code de destruction, avec leurre : l'appli fait comme si le code était bon et s'ouvre sur
+     * une liste de contacts vide. Pendant ce temps, sans interruption possible :
+     *  1. l'ancien état est chargé en mémoire ;
+     *  2. la clé Keystore et le coffre sont détruits (plus rien n'est déchiffrable sur le disque) ;
+     *  3. une nouvelle identité est créée, dont le code de déverrouillage est le code qui vient
+     *     d'être saisi (le code de destruction est aléatoire, à redéfinir dans « Changer mes codes ») ;
+     *  4. les alertes partent depuis la mémoire (5 s maximum), puis l'ancien état est oublié.
+     * Rien ne distingue cet écran d'une appli dont on aurait supprimé tous les contacts.
      */
-    private fun redButton() {
-        _ui.value = Ui(screen = Screen.Setup)
+    private fun redButton(code: String) {
+        val old = runCatching { store.load() }.getOrNull()
+        val m = messenger
+        if (m != null) synchronized(m) { messenger = null }
+        val relay = old?.relay ?: RelayRef(BuildConfig.DEFAULT_RELAY_URL, parseFingerprint(BuildConfig.DEFAULT_RELAY_FP))
+        val fresh = AppState.newIdentity(relay)
+        _ui.value = Ui(screen = Screen.Contacts, mySafety = safetyNumber(fresh.ik), relayUrl = relay.url)
         duressJob = viewModelScope.launch(Dispatchers.IO + NonCancellable) {
-            val state = runCatching { store.load() }.getOrNull()
             store.wipe()
-            if (state != null) runCatching { Messenger(state, persist = {}).sendAlerts(5_000) }
-            state?.identitySeed?.fill(0)
-            state?.x25519Priv?.fill(0)
+            runCatching {
+                store.beginNew()
+                store.setCodes(fresh, code, b64(randomBytes(24)))
+                messenger = Messenger(fresh, ::persist)
+            }
+            if (old != null) runCatching { Messenger(old, persist = {}).sendAlerts(5_000) }
+            old?.identitySeed?.fill(0)
+            old?.x25519Priv?.fill(0)
+        }
+    }
+
+    fun goChangeCodes() = _ui.update { it.copy(screen = Screen.ChangeCodes, error = null, info = null) }
+
+    /** Change les deux codes ; le code actuel est exigé. Le code de destruction y déclenche aussi le bouton rouge. */
+    fun changeCodes(current: String, unlock: String, unlockAgain: String, duress: String, duressAgain: String) = action {
+        require(unlock == unlockAgain) { "les deux saisies du nouveau code de déverrouillage diffèrent" }
+        require(duress == duressAgain) { "les deux saisies du nouveau code de destruction diffèrent" }
+        LockBox.validateCodes(unlock, duress)
+        when (val r = store.changeCodes(current, unlock, duress)) {
+            StateStore.UnlockResult.Unlocked -> {
+                _ui.update { it.copy(info = "Codes modifiés.") }
+                refresh(Screen.Contacts)
+            }
+            StateStore.UnlockResult.Duress -> redButton(current)
+            is StateStore.UnlockResult.Wrong ->
+                error(if (r.waitSeconds > 0) "Code actuel incorrect. Prochain essai dans ${r.waitSeconds} s." else "Code actuel incorrect.")
+            is StateStore.UnlockResult.Throttled -> error("Trop d'essais. Réessaie dans ${r.waitSeconds} s.")
         }
     }
 
