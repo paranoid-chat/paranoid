@@ -1,4 +1,4 @@
-# Paranoid — v0.4.0
+# Paranoid — v0.5.0
 
 *The Chat app for the truly paranoids.*
 
@@ -12,19 +12,20 @@ Messagerie sans compte : l'identité est une paire de clés créée sur le tél�
 | `core/` | Kotlin pur (JVM) : crypto, Double Ratchet, coffre à deux codes, invitations, client du relais avec épinglage du certificat, sérialisation de l'état. Testé sur JVM et contre le relais Go. |
 | `relay/` | Relais Go (SQLite) et `relaycli`, le client de test en ligne de commande (Linux et Windows). |
 
-## Ce que fait la v0.4
+## Ce que fait la v0.5
 
 - **Identité** : créée au premier lancement, après un test du relais (TLS et empreinte).
 - **Contacts** : nom local, puis affichage de mon QR, puis scan du sien. Avec un PC sans caméra, l'invitation peut aussi être partagée en texte. L'empreinte de sécurité est à comparer de vive voix.
 - **Messages** : texte chiffré par le Double Ratchet, 1963 octets maximum.
 - **Code de déverrouillage** : Argon2id (64 Mio, 3 passes). Les essais sont temporisés à partir de 5 échecs (30 s, puis doublement). L'appli se verrouille avec le cadenas, ou après 60 s en arrière-plan.
-- **Code de destruction (bouton rouge)**, saisi à la place du code normal :
-  1. l'écran devient aussitôt celui d'une appli vierge ;
-  2. la clé Keystore et le coffre sont détruits ;
+- **Code de destruction (bouton rouge)**, saisi à la place du code normal. L'appli fait **comme si le code était bon** : elle s'ouvre sur une liste de contacts vide, comme une appli dont on aurait tout supprimé. En arrière-plan :
+  1. la clé Keystore et le coffre sont détruits ;
+  2. une nouvelle identité est créée, et le code qui vient d'être saisi devient son code de déverrouillage (le rouvrir avec ce code donne la même appli vide) ;
   3. depuis la mémoire, l'alerte « X a utilisé le bouton rouge » part chez tous les contacts (5 s maximum) ;
-  4. tout est effacé.
+  4. l'ancien état est oublié.
 
-  Chez le destinataire, la conversation affiche l'alerte et n'accepte plus d'envoi.
+  Le code de destruction de la nouvelle identité est aléatoire : il faut en définir un vrai dans *Changer mes codes*. Chez le destinataire, la conversation affiche l'alerte et n'accepte plus d'envoi.
+- **Changer mes codes** (menu ⋮ de la liste des contacts) : le code actuel est exigé. Le code de destruction saisi dans ce champ déclenche lui aussi le bouton rouge.
 - **Pas de notifications**, par choix de sécurité. Les messages attendent sur le relais (jusqu'à 7 jours, 100 au maximum par contact) et arrivent quand l'appli est ouverte et déverrouillée.
 - **Sécurité locale** :
   - état chiffré par une clé de données, dans un coffre à deux codes, lui-même chiffré par une clé non exportable du Keystore (StrongBox si disponible) ;
@@ -43,6 +44,7 @@ Messagerie sans compte : l'identité est une paire de clés créée sur le tél�
 - **Code de destruction détectable** : le coffre contient deux emplacements. Quelqu'un qui analyse les fichiers voit qu'il existe deux codes, sans savoir lequel détruit.
 - **Compteur d'essais contournable** : il est stocké dans un fichier, qu'un attaquant ayant les droits root pourrait restaurer.
 - **Alerte sans réseau** : si le téléphone n'a pas de réseau au moment du bouton rouge, l'alerte ne part pas, mais la destruction a lieu quand même.
+- **Empreinte changée après le bouton rouge** : la nouvelle identité a une autre empreinte de sécurité. Seul quelqu'un qui connaissait l'ancienne peut le remarquer.
 
 ---
 
@@ -129,10 +131,11 @@ N'ouvre qu'**une seule** fenêtre `relaycli` à la fois sur le dossier `pc`. Deu
 | 4 | 5 mauvais codes | Temporisation de 30 s |
 | 5 | Appli en arrière-plan plus de 60 s | Reverrouillée au retour |
 | 6 | Installer une nouvelle version par-dessus | Identité et conversations conservées |
-| 7 | Pendant le `chat`, saisir le **code de destruction** sur le téléphone | Téléphone : écran d'identité vierge. PC : alerte « tel a utilisé le bouton rouge », puis envoi refusé |
+| 7 | Pendant le `chat`, verrouiller le téléphone puis saisir le **code de destruction** | Téléphone : s'ouvre comme déverrouillé, sur une liste de contacts vide (empreinte différente). PC : alerte « tel a utilisé le bouton rouge », puis envoi refusé |
+| 7 bis | Verrouiller, puis rouvrir avec le même code de destruction | Même appli vide, sans incohérence. Puis *Changer mes codes* avec ce code comme code actuel |
 | 8 | `& $C -d pc panic --oui` (bouton rouge côté PC) | Téléphone : alerte dans la conversation, saisie remplacée par « Supprimer la conversation » |
 
-Après le scénario 7, supprime le contact côté PC (`& $C -d pc remove tel`), recrée une identité sur le téléphone, puis refais l'appairage. Après le scénario 8, le dossier `pc` est effacé : refais l'`init`, supprime le contact sur le téléphone, puis refais l'appairage.
+Après le scénario 7, supprime le contact côté PC (`& $C -d pc remove tel`), puis refais l'appairage avec la nouvelle identité du téléphone. Après le scénario 8, le dossier `pc` est effacé : refais l'`init`, supprime le contact sur le téléphone, puis refais l'appairage.
 
 ### Diagnostic
 
