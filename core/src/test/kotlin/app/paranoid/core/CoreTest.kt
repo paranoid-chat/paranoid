@@ -69,26 +69,66 @@ class CryptoTest {
 class InviteTest {
     @Test
     fun roundTrip() {
-        val inv = Invite(randomBytes(32), randomBytes(32), listOf(InviteRelay("https://192.168.1.252:8443", randomBytes(32), randomBytes(16))))
+        val inv = Invite(randomBytes(32), randomBytes(32), listOf(InviteRelay("https://192.168.1.252:8443", randomBytes(32), randomBytes(16))), randomBytes(32))
         val back = Invite.decode(inv.encode())
         assertArrayEquals(inv.ik, back.ik)
         assertArrayEquals(inv.xk, back.xk)
         assertEquals(inv.relays[0].url, back.relays[0].url)
         assertArrayEquals(inv.relays[0].writeId, back.relays[0].writeId)
+        assertArrayEquals(inv.secret, back.secret)
     }
 
     @Test
     fun rejectsInvalid() {
-        val good = Invite(randomBytes(32), randomBytes(32), listOf(InviteRelay("https://x:1", randomBytes(32), randomBytes(16))))
+        val good = Invite(randomBytes(32), randomBytes(32), listOf(InviteRelay("https://x:1", randomBytes(32), randomBytes(16))), randomBytes(32))
         for (bad in listOf(
             "", "!!!", b64("{".toByteArray()),
-            b64("""{"v":2,"ik":"","xk":"","r":[]}""".toByteArray()),
-            Invite(good.ik, good.xk, emptyList()).encode(),
-            Invite(good.ik, good.xk, listOf(InviteRelay("http://x:1", randomBytes(32), randomBytes(16)))).encode(),
-            Invite(good.ik.copyOf(31), good.xk, good.relays).encode(),
+            b64("""{"v":1,"ik":"${b64(good.ik)}","xk":"${b64(good.xk)}","r":[{"u":"https://x:1","fp":"${b64(randomBytes(32))}","w":"${b64(randomBytes(16))}"}]}""".toByteArray()),
+            Invite(good.ik, good.xk, emptyList(), good.secret).encode(),
+            Invite(good.ik, good.xk, listOf(InviteRelay("http://x:1", randomBytes(32), randomBytes(16))), good.secret).encode(),
+            Invite(good.ik.copyOf(31), good.xk, good.relays, good.secret).encode(),
+            Invite(good.ik, good.xk, good.relays, randomBytes(16)).encode(),
         )) {
             expect<InviteException> { Invite.decode(bad) }
         }
+    }
+}
+
+class PairingTest {
+    private val inviterSeed = Ed25519.newSeed()
+    private val inviterIk = Ed25519.publicOf(inviterSeed)
+    private val inviterX = X25519.generatePrivate()
+    private val scannerSeed = Ed25519.newSeed()
+    private val scannerX = X25519.generatePrivate()
+    private val secret = randomBytes(PAIR_SECRET_LEN)
+    private val payload = PairPayload(Ed25519.publicOf(scannerSeed), X25519.publicOf(scannerX), randomBytes(16), RelayRef("https://192.168.1.252:8443", randomBytes(32)))
+
+    @Test
+    fun roundTrip() {
+        val blob = Pairing.seal(scannerSeed, inviterIk, X25519.publicOf(inviterX), secret, payload)
+        assertEquals(BLOB_SIZE, blob.size)
+        assertEquals(PAIR_VERSION, blob[0])
+        val p = Pairing.open(inviterX, inviterIk, secret, blob)!!
+        assertArrayEquals(payload.ik, p.ik)
+        assertArrayEquals(payload.xk, p.xk)
+        assertArrayEquals(payload.writeId, p.writeId)
+        assertEquals(payload.relay.url, p.relay.url)
+        assertArrayEquals(payload.relay.fp, p.relay.fp)
+    }
+
+    @Test
+    fun rejections() {
+        val blob = Pairing.seal(scannerSeed, inviterIk, X25519.publicOf(inviterX), secret, payload)
+        assertTrue(Pairing.open(inviterX, inviterIk, randomBytes(PAIR_SECRET_LEN), blob) == null)
+        assertTrue(Pairing.open(X25519.generatePrivate(), inviterIk, secret, blob) == null)
+        for (i in listOf(0, 1, 40, 500, BLOB_SIZE - 1)) {
+            val bad = blob.copyOf(); bad[i] = (bad[i].toInt() xor 1).toByte()
+            assertTrue(Pairing.open(inviterX, inviterIk, secret, bad) == null)
+        }
+        // Quelqu'un qui a vu le QR annonce l'ik de la victime avec sa propre clé xk : refusé.
+        val mallory = Ed25519.newSeed()
+        val forged = PairPayload(payload.ik, X25519.publicOf(X25519.generatePrivate()), payload.writeId, payload.relay)
+        assertTrue(Pairing.open(inviterX, inviterIk, secret, Pairing.seal(mallory, inviterIk, X25519.publicOf(inviterX), secret, forged)) == null)
     }
 }
 

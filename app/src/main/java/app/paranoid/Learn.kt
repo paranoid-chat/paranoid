@@ -304,24 +304,28 @@ private val TOPICS = listOf(
             "et en mémoire tant que l'appli est déverrouillée.",
     ),
     Topic(
-        title = "Empreinte et QR",
-        summary = "Pourquoi l'échange se fait en face à face",
+        title = "Appairage et empreinte",
+        summary = "Un seul scan, en face à face, puis une vérification à voix haute",
         diagram = {
-            Line { N("Toi", Kind.ME, 1f); Arrow("QR, en face à face", both = true, weight = 2f); N("Ton contact", Kind.PEER, 1f) }
-            DownArrow("puis comparez de vive voix")
+            Line { N("Toi : tu affiches\nton QR", Kind.ME); Arrow("il le scanne,\nface à face", weight = 1.2f); N("Ton contact", Kind.PEER) }
+            DownArrow("son téléphone t'envoie ses clés, chiffrées par le secret du QR")
             Line { N("Chez lui, ton\nempreinte :\n1A2B 3C4D …", Kind.NEUTRAL); Text(" = ", style = MaterialTheme.typography.titleLarge); N("Chez toi,\n« Mon empreinte » :\n1A2B 3C4D …", Kind.NEUTRAL) }
         },
-        simple = "Le QR contient ta clé publique et l'adresse de ta boîte sur le relais. L'échanger en face à face garantit " +
-            "que la clé reçue est bien celle de la personne devant toi, et pas celle d'un intermédiaire qui se ferait passer pour elle.\n\n" +
-            "L'empreinte de sécurité est un résumé de ta clé publique, en 20 caractères. Après l'échange, comparez-la à voix haute : " +
-            "l'empreinte que ton contact voit pour toi doit être « Mon empreinte » sur ton téléphone, et inversement. " +
+        simple = "Pour ajouter quelqu'un, l'un affiche son QR et l'autre le scanne, en face à face. Le QR contient ta clé publique, " +
+            "l'adresse de la boîte que tu lui réserves et un secret qui ne sert qu'une fois. En le scannant, son téléphone t'envoie " +
+            "ses propres clés par le relais, protégées par ce secret : l'appairage se termine tout seul, en quelques secondes.\n\n" +
+            "L'empreinte de sécurité est un résumé de ta clé publique, en 20 caractères. Une fois l'appairage terminé, comparez-la " +
+            "à voix haute : l'empreinte que ton contact voit pour toi doit être « Mon empreinte » sur ton téléphone, et inversement. " +
             "Si elles diffèrent, supprimez le contact et recommencez.\n\n" +
-            "Montre ton QR uniquement à la personne concernée : il permet de déposer des messages dans la boîte que tu lui as réservée (pas de les lire).",
-        tech = "Le QR encode en base64url un JSON {v, ik, xk, r:[{u, fp, w}]} : les deux clés publiques, l'URL du relais, " +
-            "l'empreinte SHA-256 de son certificat et le write_id (identifiant de dépôt) de la boîte créée pour ce contact seulement.\n\n" +
-            "Empreinte de sécurité : les 10 premiers octets de SHA-256(ik), soit 80 bits, affichés en hexadécimal.\n\n" +
-            "Chaque contact a sa propre boîte : un QR montré à l'un ne permet pas d'écrire dans la boîte d'un autre. " +
-            "Si les clés d'un contact déjà enregistré changent, l'invitation est refusée.",
+            "Ne montre ton QR qu'à la personne concernée : quelqu'un qui le photographierait pourrait tenter de se faire passer pour elle. " +
+            "La comparaison des empreintes le révélerait.",
+        tech = "Le QR encode en base64url un JSON {v:2, ik, xk, r:[{u, fp, w}], s} : les deux clés publiques, l'URL du relais, " +
+            "l'empreinte SHA-256 de son certificat, le write_id de la boîte créée pour ce contact seulement, et un secret de 32 octets.\n\n" +
+            "Celui qui scanne crée sa boîte pour l'invitant, puis dépose dans la boîte de l'invitant un bloc d'appairage de 2048 octets " +
+            "(version 3) : X25519 éphémère, puis AES-256-GCM avec une clé HKDF-SHA256(X25519(éphémère, xk) ‖ secret). Le contenu " +
+            "(ses ik, xk, write_id et relais) est signé par sa clé d'identité Ed25519, ce qui lie sa clé xk à l'ik que couvre l'empreinte.\n\n" +
+            "Le secret est effacé dès le premier bloc valide : l'invitation ne sert qu'une fois.\n\n" +
+            "Empreinte de sécurité : les 10 premiers octets de SHA-256(ik), soit 80 bits, affichés en hexadécimal.",
     ),
     Topic(
         title = "Le relais",
@@ -341,7 +345,7 @@ private val TOPICS = listOf(
             "Un message non relevé est supprimé au bout de 7 jours, et une boîte accepte 100 messages en attente au maximum.",
         tech = "HTTPS en TLS 1.3, avec un certificat auto-signé épinglé : l'appli compare l'empreinte SHA-256 du certificat, " +
             "sans autorité de certification (le nom d'hôte n'est pas utilisé).\n\n" +
-            "Chaque boîte a deux identifiants aléatoires : box_id pour lire, write_id pour déposer (celui du QR). " +
+            "Chaque boîte a deux identifiants aléatoires : box_id pour lire, write_id pour déposer (celui du QR, ou celui envoyé à l'appairage). " +
             "La relève et la suppression sont signées par une clé Ed25519 propre à la boîte, avec horodatage (±60 s) et nonce " +
             "contre le rejeu. Aucune clé commune ne relie les boîtes d'une même personne.\n\n" +
             "Limites : blocs de 2048 octets exactement, 100 en attente par boîte, 7 jours de conservation, boîte supprimée après " +
@@ -410,11 +414,13 @@ private val TOPICS = listOf(
             "est une clé enfermée dans la puce de sécurité du téléphone : elle ne peut pas en sortir, donc une copie des fichiers " +
             "est inutilisable sur un autre appareil.\n\n" +
             "Aucune sauvegarde (Google, Samsung, PC) ne contient Paranoid. Les captures d'écran sont bloquées, et l'aperçu dans " +
-            "les applis récentes est masqué. L'appli se verrouille avec le cadenas, ou après 60 s en arrière-plan.",
+            "les applis récentes est masqué. L'appli se verrouille avec le cadenas, ou après 60 s en arrière-plan.\n\n" +
+            "Chaque champ de saisie demande au clavier de ne rien apprendre ni mémoriser de ce que tu tapes (Gboard passe alors en mode incognito).",
         tech = "state.bin : l'état, en AES-256-GCM avec une clé de données aléatoire de 256 bits.\n" +
             "lock.bin : le coffre à deux codes, chiffré en AES-256-GCM par une clé non exportable de l'Android Keystore " +
             "(StrongBox si le téléphone en a une, sinon l'environnement d'exécution sécurisé, TEE).\n\n" +
-            "Fichiers dans noBackupFilesDir, allowBackup=false, règles d'extraction excluant tout, FLAG_SECURE sur la fenêtre. " +
+            "Fichiers dans noBackupFilesDir, allowBackup=false, règles d'extraction excluant tout, FLAG_SECURE sur la fenêtre, " +
+            "IME_FLAG_NO_PERSONALIZED_LEARNING sur tous les champs de saisie. " +
             "Au verrouillage, la clé de données est effacée de la mémoire.\n\n" +
             "Détruire l'entrée Keystore rend tous les fichiers illisibles instantanément, même s'il en reste des traces dans la mémoire flash.",
     ),
@@ -440,12 +446,12 @@ private val TOPICS = listOf(
             Line { N("Ancien relais", Kind.RELAY); Arrow("« a changé\nde relais »"); N("Tes contacts", Kind.PEER) }
             DownArrow("puis tout est effacé")
             Node("Nouvelle identité sur le nouveau relais", Kind.ME)
-            DownArrow("nouveaux codes, puis nouvel échange de QR")
+            DownArrow("nouveaux codes, puis nouvel appairage")
             Node("Tes contacts", Kind.PEER)
         },
         simple = "Il n'y a pas de migration : moins de code, c'est moins de failles possibles. Changer de relais efface donc tout.\n\n" +
             "Avant d'effacer, l'appli teste le nouveau relais, puis prévient chacun de tes contacts. Ensuite, tu choisis de nouveaux codes " +
-            "et refais l'échange de QR avec chacun.",
+            "et refais l'appairage avec chacun.",
         tech = "Le code actuel est exigé (le code de destruction y déclenche le bouton rouge). Le test vérifie la connexion TLS et " +
             "l'empreinte du certificat du nouveau relais : en cas d'échec, rien n'est effacé.\n\n" +
             "L'alerte est un message chiffré de type 3, envoyé par la session en cours, 5 s au maximum. Chez le contact, la conversation " +
@@ -462,7 +468,7 @@ private val TOPICS = listOf(
             "• le vol des clés après coup : les anciens messages restent illisibles.\n\n" +
             "Paranoid ne peut rien contre :\n" +
             "• un téléphone compromis (logiciel espion, téléphone rooté) : il voit l'écran et le clavier ;\n" +
-            "• un clavier qui apprend ou envoie ce que tu tapes : utilise un clavier hors ligne, sans apprentissage ;\n" +
+            "• un clavier qui ignore la demande « sans apprentissage » de l'appli, ou qui envoie ce que tu tapes : préfère un clavier hors ligne ;\n" +
             "• les métadonnées : le relais voit les adresses IP et les heures, et peut deviner qui parle à qui ;\n" +
             "• ton contact lui-même, qui peut montrer ou photographier ses messages ;\n" +
             "• une photo de l'écran prise avec un autre appareil.\n\n" +
@@ -476,7 +482,7 @@ private val TOPICS = listOf(
     Topic(
         title = "Vérifier soi-même",
         summary = "Ne pas croire sur parole : comment contrôler",
-        simple = "1. Les empreintes de tes contacts : comparez-les à voix haute, en face à face (voir « Empreinte et QR »).\n\n" +
+        simple = "1. Les empreintes de tes contacts : comparez-les à voix haute, en face à face (voir « Appairage et empreinte »).\n\n" +
             "2. Le relais : depuis un PC, cette commande affiche l'empreinte de son certificat, à comparer avec « Mes infos en direct » :\n" +
             "openssl s_client -connect ADRESSE:PORT </dev/null 2>/dev/null | openssl x509 -noout -fingerprint -sha256\n\n" +
             "3. L'appli installée : « Mes infos en direct » affiche l'empreinte du certificat qui a signé l'APK. Compare-la avec " +

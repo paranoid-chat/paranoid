@@ -24,12 +24,14 @@ class Contact(val name: String) {
     var session: Session? = null
     val seen: ArrayDeque<String> = ArrayDeque()
     val messages: MutableList<ChatMessage> = mutableListOf()
-    var pendingFromUnknown: Int = 0
 
-    /** Le contact a utilisé le bouton rouge : sa clé est détruite, on ne lui écrit plus. */
+    /** Bouton rouge ou changement de relais reçu : l'identité du contact est effacée, on ne lui écrit plus. */
     var burned: Boolean = false
 
-    /** Les deux moitiés du double scan sont faites. */
+    /** Secret à usage unique de mon invitation, effacé dès que l'appairage est terminé. */
+    var pairSecret: ByteArray? = null
+
+    /** Appairage terminé : clés du contact connues, et une boîte dans chaque sens. */
     val ready: Boolean get() = ik != null && myBox != null && their != null
 }
 
@@ -53,7 +55,7 @@ class AppState(
 /** Sérialisation binaire de l'état. Le chiffrement au repos est fait par l'appli (Keystore). */
 internal object StateCodec {
     private const val MAGIC = 0x50524E44 // "PRND"
-    private const val VERSION = 4 // v2 : « bouton rouge » ; v3 : notifications (retirées en v4)
+    private const val VERSION = 5 // v2 : bouton rouge ; v3 : notifications (retirées en v4) ; v5 : appairage en un scan
 
     fun encode(s: AppState): ByteArray {
         val bos = ByteArrayOutputStream()
@@ -124,8 +126,8 @@ internal object StateCodec {
         for (m in c.messages) {
             bytes(m.id); writeBoolean(m.outgoing); writeLong(m.ts); bytes(m.text.toByteArray()); writeInt(m.status.ordinal)
         }
-        writeInt(c.pendingFromUnknown)
         writeBoolean(c.burned)
+        opt(c.pairSecret)
     }
 
     private fun DataInputStream.contact(version: Int): Contact {
@@ -140,9 +142,10 @@ internal object StateCodec {
                 ChatMessage(bytes(), readBoolean(), readLong(), bytes().toString(Charsets.UTF_8), MessageStatus.entries[readInt()]),
             )
         }
-        c.pendingFromUnknown = readInt()
+        if (version < 5) readInt() // ancien compteur de messages d'inconnus, ignoré
         if (version >= 2) c.burned = readBoolean()
         if (version == 3 && readBoolean()) readUTF() // ancien point de notification, ignoré
+        if (version >= 5) c.pairSecret = opt()
         return c
     }
 }

@@ -45,7 +45,7 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            ParanoidTheme {
+            ParanoidTheme { NoPersonalizedLearning {
                 val ui by vm.ui.collectAsStateWithLifecycle()
                 BackHandler(enabled = ui.screen is Screen.Chat || ui.screen is Screen.AddContact || ui.screen is Screen.ChangeCodes ||
                     ui.screen is Screen.ChangeRelay || ui.screen is Screen.Learn) {
@@ -64,7 +64,7 @@ class MainActivity : ComponentActivity() {
                     is Screen.Chat -> ChatScreen(s.name, ui, vm)
                     is Screen.Fatal -> FatalScreen(s.message, vm)
                 }
-            }
+            } }
         }
     }
 }

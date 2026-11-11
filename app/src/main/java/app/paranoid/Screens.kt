@@ -246,16 +246,14 @@ fun ContactsScreen(ui: Ui, vm: MainViewModel) {
             Spacer(Modifier.height(8.dp))
             HorizontalDivider()
             if (ui.contacts.isEmpty()) {
-                Text("Aucun contact. Appuie sur + et échangez vos QR en face à face.",
+                Text("Aucun contact. Appuie sur + : l'un affiche son QR, l'autre le scanne, en face à face.",
                     modifier = Modifier.padding(24.dp), style = MaterialTheme.typography.bodyMedium)
             }
             LazyColumn(Modifier.fillMaxSize()) {
                 items(ui.contacts, key = { it.name }) { c ->
                     val sub = when {
                         c.burned -> "Conversation fermée"
-                        c.pendingFromUnknown > 0 -> "${c.pendingFromUnknown} message(s) en attente : scanne son QR"
-                        !c.inviteScanned -> "QR pas encore scanné"
-                        !c.inviteShown -> "Ton QR n'a pas encore été montré"
+                        !c.ready -> "En attente de son scan"
                         c.lastText != null -> c.lastText
                         else -> "Prêt"
                     }
@@ -281,7 +279,7 @@ fun AddContactScreen(ui: Ui, vm: MainViewModel) {
     var pasted by rememberSaveable { mutableStateOf("") }
     val row = ui.contacts.firstOrNull { it.name == ui.add.name }
     val scanner = rememberLauncherForActivityResult(ScanContract()) { r ->
-        r.contents?.let { vm.addScanned(ui.add.name, it) }
+        r.contents?.let { vm.addScanned(name, it) }
     }
     Scaffold(
         topBar = {
@@ -298,18 +296,43 @@ fun AddContactScreen(ui: Ui, vm: MainViewModel) {
         ) {
             val invite = ui.add.invite
             if (invite == null) {
-                Text("1. Donne un nom à ce contact (il reste sur ton téléphone).")
-                OutlinedTextField(name, { name = it }, label = { Text("Nom") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Text("Un seul scan suffit : l'un affiche son QR, l'autre le scanne, en face à face.")
+                OutlinedTextField(name, { name = it }, label = { Text("Nom du contact (reste sur ton téléphone)") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth())
                 Button(onClick = { vm.createInvite(name) }, enabled = name.isNotBlank() && !ui.busy, modifier = Modifier.fillMaxWidth()) {
                     Text(if (ui.busy) "Création de la boîte…" else "Afficher mon QR")
                 }
+                Button(
+                    onClick = {
+                        scanner.launch(
+                            ScanOptions().setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                                .setPrompt("QR de ${name.trim()}").setBeepEnabled(false).setOrientationLocked(false),
+                        )
+                    },
+                    enabled = name.isNotBlank() && !ui.busy, modifier = Modifier.fillMaxWidth(),
+                ) { Text(if (ui.busy) "Envoi de l'appairage…" else "Scanner son QR") }
+                HorizontalDivider()
+                Text("Avec un PC sans caméra : colle ici l'invitation qu'il t'a transmise.", style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(pasted, { pasted = it }, label = { Text("Son invitation") },
+                    textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), modifier = Modifier.fillMaxWidth())
+                OutlinedButton(onClick = { vm.addScanned(name, pasted) }, enabled = name.isNotBlank() && pasted.isNotBlank() && !ui.busy,
+                    modifier = Modifier.fillMaxWidth()) { Text("Ajouter depuis le texte") }
+            } else if (row?.ready == true) {
+                Text("Appairage terminé avec ${ui.add.name}.", style = MaterialTheme.typography.titleMedium)
+                Text("Son empreinte : ${row.safety}", fontFamily = FontFamily.Monospace)
+                Text("Comparez-la de vive voix avec celle que ${ui.add.name} voit comme « Mon empreinte ». Si elles diffèrent, supprimez le contact.")
+                Button(onClick = { vm.openChat(ui.add.name) }, modifier = Modifier.fillMaxWidth()) { Text("Ouvrir la discussion") }
             } else {
-                Text("2. Fais scanner ce QR par ${ui.add.name}, en face à face uniquement.")
+                Text("Fais scanner ce QR par ${ui.add.name}, en face à face uniquement. Il ne sert qu'une fois.")
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Image(remember(invite) { qrBitmap(invite) }, "Mon QR pour ${ui.add.name}",
                         filterQuality = FilterQuality.None, modifier = Modifier.size(280.dp))
                 }
                 Text("Mon empreinte : ${ui.mySafety}", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelMedium)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    Text("  En attente du scan de ${ui.add.name}…")
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     OutlinedButton(onClick = { copySensitive(ctx, "Invitation Paranoid", invite) }, modifier = Modifier.weight(1f)) {
                         Text("Copier")
@@ -318,30 +341,8 @@ fun AddContactScreen(ui: Ui, vm: MainViewModel) {
                         Text("Partager")
                     }
                 }
-                Text(
-                    "Sans caméra en face (PC), transmets l'invitation en texte, puis comparez vos empreintes.",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                HorizontalDivider()
-                if (row?.inviteScanned == true) {
-                    Text("3. QR de ${ui.add.name} scanné. Empreinte : ${row.safety}", fontFamily = FontFamily.Monospace)
-                    Button(onClick = { vm.openChat(ui.add.name) }, modifier = Modifier.fillMaxWidth()) { Text("Ouvrir la discussion") }
-                } else {
-                    Text("3. Scanne ensuite le QR de ${ui.add.name}.")
-                    Button(
-                        onClick = {
-                            scanner.launch(
-                                ScanOptions().setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-                                    .setPrompt("QR de ${ui.add.name}").setBeepEnabled(false).setOrientationLocked(false),
-                            )
-                        },
-                        enabled = !ui.busy, modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Scanner son QR") }
-                    OutlinedTextField(pasted, { pasted = it }, label = { Text("… ou coller son invitation") },
-                        textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), modifier = Modifier.fillMaxWidth())
-                    OutlinedButton(onClick = { vm.addScanned(ui.add.name, pasted) }, enabled = pasted.isNotBlank() && !ui.busy,
-                        modifier = Modifier.fillMaxWidth()) { Text("Ajouter depuis le texte") }
-                }
+                Text("Pour un PC sans caméra, transmets l'invitation en texte : il l'ajoute avec relaycli.",
+                    style = MaterialTheme.typography.bodySmall)
             }
         }
     }
@@ -452,7 +453,7 @@ private fun Bubble(m: MessageRow, name: String) {
                 "Sa clé privée est détruite : il ne pourra plus consulter cette conversation. Pense à supprimer tes conversations avec $name."
         } else {
             "$name a changé de relais" to
-                "Son ancienne identité est effacée : il ne pourra plus consulter cette conversation. Pour continuer, supprimez le contact et refaites l'échange de QR."
+                "Son ancienne identité est effacée : il ne pourra plus consulter cette conversation. Pour continuer, supprimez le contact et refaites l'appairage."
         }
         Surface(
             color = MaterialTheme.colorScheme.errorContainer,
@@ -628,7 +629,7 @@ fun ChangeRelayScreen(ui: Ui, vm: MainViewModel) {
                         "Pour rester simple, il n'y a pas de migration. Ton identité, tes contacts et tes conversations " +
                             "sont détruits, puis une nouvelle identité est créée sur le nouveau relais.\n\n" +
                             "Chaque contact reçoit l'alerte « a changé de relais » et sa conversation avec toi est fermée. " +
-                            "Il faudra refaire l'échange de QR en face à face avec chacun, puis choisir de nouveaux codes.",
+                            "Il faudra refaire l'appairage en face à face avec chacun, puis choisir de nouveaux codes.",
                         color = MaterialTheme.colorScheme.onErrorContainer,
                     )
                 }

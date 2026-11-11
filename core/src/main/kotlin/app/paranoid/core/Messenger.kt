@@ -27,46 +27,75 @@ class Messenger(
 
     private fun session(c: Contact, env: DrEnv): Session = c.session ?: Session.create(env).also { c.session = it }
 
-    /** Crée (si besoin) ma boîte pour [name] et renvoie mon invitation, à montrer en QR à ce contact uniquement. */
-    @Synchronized
-    fun invite(name: String): String {
+    private fun checkName(name: String): String {
         val n = name.trim()
         require(n.isNotEmpty() && n.length <= 32) { "nom de contact invalide (1 à 32 caractères)" }
-        val c = state.contacts[n] ?: Contact(n)
-        var box = c.myBox
-        if (box == null) {
-            val readSeed = Ed25519.newSeed()
-            val (boxId, writeId) = clientFor(state.relay).createBox(Ed25519.publicOf(readSeed))
-            box = MyBox(state.relay, boxId, writeId, readSeed)
-            c.myBox = box
-            state.contacts[n] = c
-            save()
-        }
-        return Invite(state.ik, state.xk, listOf(InviteRelay(box.relay.url, box.relay.fp, box.writeId))).encode()
+        return n
     }
 
-    /** Enregistre l'invitation scannée de [name]. */
+    private fun newBox(relay: RelayRef): MyBox {
+        val readSeed = Ed25519.newSeed()
+        val (boxId, writeId) = clientFor(relay).createBox(Ed25519.publicOf(readSeed))
+        return MyBox(relay, boxId, writeId, readSeed)
+    }
+
+    /**
+     * Invitant : crée (ou reprend) le contact [name] en attente, avec sa boîte et un secret à usage
+     * unique, et renvoie l'invitation à montrer en QR à ce contact uniquement.
+     */
     @Synchronized
-    fun addContact(name: String, invite: String): Contact {
-        val n = name.trim()
-        require(n.isNotEmpty() && n.length <= 32) { "nom de contact invalide (1 à 32 caractères)" }
+    fun invite(name: String): String {
+        val n = checkName(name)
+        val c = state.contacts[n] ?: Contact(n)
+        if (c.ik != null) throw InviteException("$n est déjà appairé : supprime le contact pour recommencer")
+        val box = c.myBox ?: newBox(state.relay).also { c.myBox = it }
+        val secret = c.pairSecret ?: randomBytes(PAIR_SECRET_LEN).also { c.pairSecret = it }
+        state.contacts[n] = c
+        save()
+        return Invite(state.ik, state.xk, listOf(InviteRelay(box.relay.url, box.relay.fp, box.writeId)), secret).encode()
+    }
+
+    /**
+     * Celui qui scanne : crée sa boîte pour [name], dépose le bloc d'appairage dans la boîte de
+     * l'invitant, puis enregistre le contact, prêt à écrire. Rien n'est enregistré si l'envoi échoue.
+     */
+    @Synchronized
+    fun join(name: String, invite: String): Contact {
+        val n = checkName(name)
         val inv = Invite.decode(invite)
         if (inv.ik.contentEquals(state.ik)) throw InviteException("c'est ta propre invitation")
-        state.contacts.values.firstOrNull { it.name != n && it.ik?.contentEquals(inv.ik) == true }?.let {
+        if (state.contacts.containsKey(n)) throw InviteException("le contact $n existe déjà : supprime-le ou choisis un autre nom")
+        state.contacts.values.firstOrNull { it.ik?.contentEquals(inv.ik) == true }?.let {
             throw InviteException("cette identité est déjà enregistrée sous le nom ${it.name}")
         }
-        val c = state.contacts[n] ?: Contact(n)
-        val old = c.ik
-        if (old != null && !old.contentEquals(inv.ik)) {
-            throw InviteException("les clés de $n ont changé : vérifie de vive voix, puis supprime le contact avant de l'ajouter à nouveau")
-        }
         val r = inv.relays.first()
-        c.ik = inv.ik
-        c.xk = inv.xk
-        c.their = TheirBox(RelayRef(r.url, r.fp), r.writeId)
+        val their = TheirBox(RelayRef(r.url, r.fp), r.writeId)
+        val box = newBox(state.relay)
+        try {
+            val blob = Pairing.seal(state.identitySeed, inv.ik, inv.xk, inv.secret, PairPayload(state.ik, state.xk, box.writeId, box.relay))
+            clientFor(their.relay).deposit(their.writeId, blob)
+        } catch (ex: Exception) {
+            runCatching { clientFor(box.relay).deleteBox(box.boxId, box.readSeed) }
+            throw ex
+        }
+        val c = Contact(n).also { it.ik = inv.ik; it.xk = inv.xk; it.myBox = box; it.their = their }
         state.contacts[n] = c
         save()
         return c
+    }
+
+    /** Invitant : applique un bloc d'appairage valide reçu dans la boîte de [c]. */
+    private fun completePairing(c: Contact, blob: ByteArray): Boolean {
+        val secret = c.pairSecret ?: return false
+        val p = Pairing.open(state.x25519Priv, state.ik, secret, blob) ?: return false
+        if (p.ik.contentEquals(state.ik)) return false
+        if (state.contacts.values.any { it !== c && it.ik?.contentEquals(p.ik) == true }) return false
+        c.ik = p.ik
+        c.xk = p.xk
+        c.their = TheirBox(p.relay, p.writeId)
+        secret.fill(0)
+        c.pairSecret = null // usage unique
+        return true
     }
 
     /** Envoie un message. Le message est ajouté à l'historique même si l'envoi échoue (statut FAILED). */
@@ -75,7 +104,7 @@ class Messenger(
         val c = contact(name)
         val their = c.their
         if (c.burned) throw IllegalStateException("$name a effacé son identité : impossible de lui écrire")
-        if (!c.ready || their == null) throw IllegalStateException("l'échange de QR avec $name n'est pas terminé")
+        if (!c.ready || their == null) throw IllegalStateException("$name n'a pas encore scanné ton QR")
         val body = text.toByteArray(Charsets.UTF_8)
         require(body.size <= MAX_TEXT) { "message trop long (${body.size} octets, max $MAX_TEXT)" }
         val id = randomBytes(16)
@@ -117,21 +146,18 @@ class Messenger(
     private fun pollContact(c: Contact, out: MutableList<Pair<Contact, ChatMessage>>): Int {
         val box = c.myBox ?: return 0
         val client = clientFor(box.relay)
-        if (c.ik == null) {
-            // Sans les clés du contact, on ne peut rien vérifier : on n'acquitte rien.
-            val (recs, _) = client.fetch(box.boxId, box.readSeed, box.lastSeq)
-            if (recs.size != c.pendingFromUnknown) {
-                c.pendingFromUnknown = recs.size
-                save()
-            }
-            return 0
-        }
-        c.pendingFromUnknown = 0
+        if (c.ik == null && c.pairSecret == null) return 0
         var rejected = 0
         while (true) {
             val (recs, more) = client.fetch(box.boxId, box.readSeed, box.lastSeq)
             if (recs.isEmpty()) return rejected
             for (r in recs) {
+                if (c.ik == null) {
+                    // Appairage pas encore terminé : seul un bloc d'appairage valide est accepté.
+                    if (!completePairing(c, r.blob)) rejected++
+                    box.lastSeq = r.seq
+                    continue
+                }
                 try {
                     val e = env(c)
                     val p = decodeInner(session(c, e).decrypt(e, r.blob))

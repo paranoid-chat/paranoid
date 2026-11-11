@@ -1,16 +1,17 @@
 package app.paranoid.core
 
-// Invitation = contenu du QR (PROTOCOL.md §6). Même format que le client Go :
-// base64url( {"v":1,"ik":"…","xk":"…","r":[{"u":"…","fp":"…","w":"…"}]} )
+// Invitation = contenu du QR (PROTOCOL.md §6), propre à un seul contact. Même format que le client Go :
+// base64url( {"v":2,"ik":"…","xk":"…","r":[{"u":"…","fp":"…","w":"…"}],"s":"…"} )
+// s = secret à usage unique de l'appairage (32 octets, voir Pairing.kt).
 
 class InviteRelay(val url: String, val fp: ByteArray, val writeId: ByteArray)
 
-class Invite(val ik: ByteArray, val xk: ByteArray, val relays: List<InviteRelay>) {
+class Invite(val ik: ByteArray, val xk: ByteArray, val relays: List<InviteRelay>, val secret: ByteArray) {
     fun encode(): String {
         val r = relays.joinToString(",") {
             """{"u":${jsonString(it.url)},"fp":"${b64(it.fp)}","w":"${b64(it.writeId)}"}"""
         }
-        val json = """{"v":1,"ik":"${b64(ik)}","xk":"${b64(xk)}","r":[$r]}"""
+        val json = """{"v":2,"ik":"${b64(ik)}","xk":"${b64(xk)}","r":[$r],"s":"${b64(secret)}"}"""
         return b64(json.toByteArray(Charsets.UTF_8))
     }
 
@@ -27,10 +28,11 @@ class Invite(val ik: ByteArray, val xk: ByteArray, val relays: List<InviteRelay>
                 null
             } ?: throw InviteException("invitation illisible (JSON)")
             val v = (obj["v"] as? Number)?.toInt()
-            if (v != 1) throw InviteException("version d'invitation $v non prise en charge")
+            if (v != 2) throw InviteException("version d'invitation $v non prise en charge : mets l'appli à jour des deux côtés")
             val ik = obj.bytes("ik")
             val xk = obj.bytes("xk")
-            if (ik?.size != 32 || xk?.size != 32) throw InviteException("invitation : clés invalides")
+            val secret = obj.bytes("s")
+            if (ik?.size != 32 || xk?.size != 32 || secret?.size != PAIR_SECRET_LEN) throw InviteException("invitation : clés invalides")
             val list = obj["r"] as? List<*> ?: emptyList<Any>()
             if (list.isEmpty() || list.size > 3) throw InviteException("invitation : 1 à 3 relais attendus")
             val relays = list.map { e ->
@@ -43,7 +45,7 @@ class Invite(val ik: ByteArray, val xk: ByteArray, val relays: List<InviteRelay>
                 }
                 InviteRelay(u, fp, w)
             }
-            return Invite(ik, xk, relays)
+            return Invite(ik, xk, relays, secret)
         }
 
         private fun Map<*, *>.bytes(k: String): ByteArray? = (this[k] as? String)?.let {

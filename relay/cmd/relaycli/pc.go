@@ -54,8 +54,13 @@ func cmdChat(s *State, args []string) error {
 	if c == nil {
 		return fmt.Errorf("contact %s inconnu", name)
 	}
+	if c.IK == nil && c.PairSecret != nil {
+		if _, err := recvFrom(s, name); err != nil {
+			return err
+		}
+	}
 	if c.IK == nil || c.Their == nil || c.MyBox == nil {
-		return fmt.Errorf("l'échange d'invitations avec %s n'est pas terminé (invite et add)", name)
+		return fmt.Errorf("%s n'a pas encore scanné ton invitation : réessaie quand c'est fait", name)
 	}
 	fmt.Printf("Discussion avec %s, empreinte %s\n", name, SafetyNumber(c.IK))
 	fmt.Println("Tape un message puis Entrée. /quit pour quitter.")

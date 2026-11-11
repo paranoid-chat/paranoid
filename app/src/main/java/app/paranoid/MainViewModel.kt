@@ -44,12 +44,9 @@ sealed interface Screen {
 data class ContactRow(
     val name: String,
     val ready: Boolean,
-    val inviteShown: Boolean,
-    val inviteScanned: Boolean,
     val safety: String?,
     val lastText: String?,
     val lastTs: Long,
-    val pendingFromUnknown: Int,
     val burned: Boolean,
 )
 
@@ -114,12 +111,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun rows(c: Contact) = ContactRow(
         name = c.name,
         ready = c.ready,
-        inviteShown = c.myBox != null,
-        inviteScanned = c.ik != null,
         safety = c.ik?.let { safetyNumber(it) },
         lastText = c.messages.lastOrNull()?.text,
         lastTs = c.messages.lastOrNull()?.ts ?: 0,
-        pendingFromUnknown = c.pendingFromUnknown,
         burned = c.burned,
     )
 
@@ -172,9 +166,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun openChat(name: String) = viewModelScope.launch(Dispatchers.IO) {
         val c = messenger?.state?.contacts?.get(name)
         if (c != null && !c.ready && !c.burned) {
-            // Échange de QR inachevé : on reprend là où il en était.
+            // Invitation pas encore scannée : on réaffiche le même QR.
             _ui.update { it.copy(screen = Screen.AddContact, add = AddFlow(name, null), error = null, info = null) }
-            if (c.myBox != null) createInvite(name)
+            createInvite(name)
         } else {
             refresh(Screen.Chat(name))
         }
@@ -339,14 +333,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         refresh()
     }
 
+    /** J'ai scanné (ou collé) l'invitation de [name] : l'appairage lui est envoyé, la discussion s'ouvre. */
     fun addScanned(name: String, invite: String) = action {
         val m = messenger ?: return@action
-        val c = m.addContact(name, invite)
+        val c = m.join(name, invite)
         val sn = safetyNumber(c.ik!!)
         _ui.update {
-            it.copy(info = "Empreinte de ${c.name} : $sn\nCompare-la avec celle affichée sur son téléphone.")
+            it.copy(
+                add = AddFlow(),
+                info = "Appairage envoyé à ${c.name}.\n\nSon empreinte : $sn\n\nComparez-la de vive voix avec celle que ${c.name} voit comme « Mon empreinte ».",
+            )
         }
-        refresh()
+        refresh(Screen.Chat(c.name))
     }
 
     fun send(name: String, text: String) {

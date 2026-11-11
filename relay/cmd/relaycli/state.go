@@ -42,7 +42,9 @@ type Contact struct {
 	Their   *TheirBox `json:"their,omitempty"`
 	Seen    []string  `json:"seen,omitempty"` // identifiants de messages récents (anti-doublon)
 	Session *Session  `json:"session,omitempty"`
-	Burned  bool      `json:"burned,omitempty"` // le contact a utilisé le bouton rouge
+	Burned  bool      `json:"burned,omitempty"` // bouton rouge ou changement de relais reçu
+	// PairSecret est le secret à usage unique de mon invitation, effacé dès l'appairage terminé.
+	PairSecret []byte `json:"pair_secret,omitempty"`
 }
 
 // ensureSession prépare l'environnement du ratchet et crée la session si besoin.
@@ -59,27 +61,23 @@ func (s *State) ensureSession(c *Contact) (*drEnv, error) {
 	return e, nil
 }
 
-// openBlob déchiffre un bloc reçu de c, selon sa version (1 : ancien format, 2 : ratchet).
+// openBlob déchiffre un message du ratchet reçu de c.
 func (s *State) openBlob(c *Contact, blob []byte) (Plain, error) {
 	if len(blob) != BlobSize {
 		return Plain{}, ErrDecrypt
 	}
-	switch blob[0] {
-	case blobVersion:
-		return Open(s.X25519(), s.IK(), c.IK, blob)
-	case drVersion:
-		e, err := s.ensureSession(c)
-		if err != nil {
-			return Plain{}, err
-		}
-		inner, err := c.Session.Decrypt(e, blob)
-		if err != nil {
-			return Plain{}, err
-		}
-		return decodeInnerV2(inner)
-	default:
+	if blob[0] != drVersion {
 		return Plain{}, ErrDRVersion
 	}
+	e, err := s.ensureSession(c)
+	if err != nil {
+		return Plain{}, err
+	}
+	inner, err := c.Session.Decrypt(e, blob)
+	if err != nil {
+		return Plain{}, err
+	}
+	return decodeInnerV2(inner)
 }
 
 // State est le contenu de state.json. Ce fichier contient les clés privées en clair :
@@ -198,11 +196,13 @@ type inviteRelay struct {
 	W  b64url `json:"w"`
 }
 
+// Invite est le contenu du QR (version 2) : il est propre à un seul contact.
 type Invite struct {
 	V  int           `json:"v"`
 	IK b64url        `json:"ik"`
 	XK b64url        `json:"xk"`
 	R  []inviteRelay `json:"r"`
+	S  b64url        `json:"s"` // secret à usage unique de l'appairage
 }
 
 func EncodeInvite(inv Invite) (string, error) {
@@ -222,10 +222,10 @@ func DecodeInvite(s string) (Invite, error) {
 	if err := json.Unmarshal(data, &inv); err != nil {
 		return inv, errors.New("invitation illisible (JSON)")
 	}
-	if inv.V != 1 {
+	if inv.V != 2 {
 		return inv, fmt.Errorf("version d'invitation %d non prise en charge", inv.V)
 	}
-	if len(inv.IK) != ed25519.PublicKeySize || len(inv.XK) != 32 {
+	if len(inv.IK) != ed25519.PublicKeySize || len(inv.XK) != 32 || len(inv.S) != SecretLen {
 		return inv, errors.New("invitation : clés invalides")
 	}
 	if len(inv.R) == 0 || len(inv.R) > 3 {

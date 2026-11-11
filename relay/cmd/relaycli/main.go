@@ -1,10 +1,10 @@
-// relaycli : client de test en ligne de commande pour le relais (PROTOCOL.md) et le format de messages v1.
+// relaycli : client de test en ligne de commande pour le relais (PROTOCOL.md, MESSAGES.md).
 //
 //	relaycli -d alice init --relay https://192.168.1.252:8443 --fp FB:2B:…
 //	relaycli -d alice invite bob        → affiche l'invitation (contenu du QR)
-//	relaycli -d bob   add alice <invitation>
+//	relaycli -d bob   add alice <invitation>   → appairage envoyé à alice
+//	relaycli -d alice recv                     → appairage terminé
 //	relaycli -d bob   send alice "salut"
-//	relaycli -d alice recv
 package main
 
 import (
@@ -32,8 +32,9 @@ func usage() {
 Commandes :
   init --relay URL --fp EMPREINTE   crée une identité et teste le relais
   whoami                            affiche ton empreinte de sécurité et ton relais
-  invite [--qr] [--png F] NOM       crée une boîte pour NOM et affiche ton invitation (QR possible)
-  add NOM INVITATION|-              enregistre le contact NOM (« - » : invitation lue sur l'entrée)
+  invite [--qr] [--png F] NOM       crée l'invitation à usage unique pour NOM (QR possible)
+  add NOM INVITATION|-              scanne l'invitation de NOM et lui envoie l'appairage
+                                    (« - » : invitation lue sur l'entrée standard)
   send NOM TEXTE…                   envoie un message à NOM
   recv                              relève, affiche et acquitte les messages
   chat NOM                          discussion en direct avec NOM (relève automatique)
@@ -195,8 +196,17 @@ func cmdInvite(s *State, args []string) error {
 		return err
 	}
 	c := s.Contacts[name]
+	if c != nil && c.IK != nil {
+		return fmt.Errorf("%s est déjà appairé ; « remove %s » pour recommencer", name, name)
+	}
 	if c == nil {
 		c = &Contact{}
+	}
+	if c.MyBox == nil || c.PairSecret == nil {
+		c.PairSecret = make([]byte, SecretLen)
+		if _, err := rand.Read(c.PairSecret); err != nil {
+			return err
+		}
 	}
 	if c.MyBox == nil {
 		readPub, readPriv, err := ed25519.GenerateKey(rand.Reader)
@@ -208,16 +218,17 @@ func cmdInvite(s *State, args []string) error {
 			return err
 		}
 		c.MyBox = &MyBox{Relay: s.Relay, BoxID: boxID, WriteID: writeID, ReadSeed: readPriv.Seed()}
-		s.Contacts[name] = c
-		if err := s.Save(); err != nil {
-			return err
-		}
+	}
+	s.Contacts[name] = c
+	if err := s.Save(); err != nil {
+		return err
 	}
 	inv, err := EncodeInvite(Invite{
-		V:  1,
+		V:  2,
 		IK: b64url(s.IK()),
 		XK: s.X25519().PublicKey().Bytes(),
 		R:  []inviteRelay{{U: c.MyBox.Relay.URL, FP: c.MyBox.Relay.FP, W: c.MyBox.WriteID}},
+		S:  c.PairSecret,
 	})
 	if err != nil {
 		return err
@@ -235,9 +246,10 @@ func cmdInvite(s *State, args []string) error {
 		}
 		fmt.Fprintf(os.Stderr, "QR enregistré dans %s\n", *png)
 	}
-	fmt.Fprintf(os.Stderr, "Invitation pour %s (à transmettre uniquement à %s) :\n", name, name)
+	fmt.Fprintf(os.Stderr, "Invitation à usage unique pour %s (à transmettre uniquement à %s) :\n", name, name)
 	fmt.Println(inv)
 	fmt.Fprintf(os.Stderr, "Ton empreinte de sécurité : %s\n", SafetyNumber(s.IK()))
+	fmt.Fprintf(os.Stderr, "Quand %s l'aura scannée, lance « recv » (ou « chat %s ») pour terminer l'appairage.\n", name, name)
 	return nil
 }
 
@@ -263,30 +275,70 @@ func cmdAdd(s *State, args []string) error {
 	if bytes.Equal(inv.IK, s.IK()) {
 		return errors.New("c'est ta propre invitation")
 	}
+	if s.Contacts[name] != nil {
+		return fmt.Errorf("le contact %s existe déjà ; « remove %s » pour recommencer", name, name)
+	}
 	for other, oc := range s.Contacts {
-		if other != name && bytes.Equal(oc.IK, inv.IK) {
+		if bytes.Equal(oc.IK, inv.IK) {
 			return fmt.Errorf("cette identité est déjà enregistrée sous le nom %s", other)
 		}
 	}
-	c := s.Contacts[name]
-	if c == nil {
-		c = &Contact{}
+	// Ma boîte pour ce contact, puis le bloc d'appairage déposé dans la sienne.
+	readPub, readPriv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return err
 	}
-	if c.IK != nil && !bytes.Equal(c.IK, inv.IK) {
-		return fmt.Errorf("les clés de %s ont changé : vérifie de vive voix, puis « remove %s » avant de l'ajouter à nouveau", name, name)
+	mine := NewRelayClient(s.Relay)
+	boxID, writeID, err := mine.CreateBox(readPub)
+	if err != nil {
+		return err
 	}
 	r := inv.R[0]
-	c.IK, c.XK = inv.IK, inv.XK
-	c.Their = &TheirBox{Relay: RelayRef{URL: r.U, FP: r.FP}, WriteID: r.W}
-	s.Contacts[name] = c
+	blob, err := SealPair(s.Identity(), inv.IK, inv.XK, inv.S, PairPayload{
+		IK: s.IK(), XK: s.X25519().PublicKey().Bytes(), W: writeID, FP: s.Relay.FP, URL: s.Relay.URL,
+	})
+	if err == nil {
+		_, err = NewRelayClient(RelayRef{URL: r.U, FP: r.FP}).Deposit(r.W, blob)
+	}
+	if err != nil {
+		_ = mine.DeleteBox(boxID, readPriv)
+		return fmt.Errorf("envoi de l'appairage : %w", err)
+	}
+	s.Contacts[name] = &Contact{
+		MyBox: &MyBox{Relay: s.Relay, BoxID: boxID, WriteID: writeID, ReadSeed: readPriv.Seed()},
+		IK:    inv.IK,
+		XK:    inv.XK,
+		Their: &TheirBox{Relay: RelayRef{URL: r.U, FP: r.FP}, WriteID: r.W},
+	}
 	if err := s.Save(); err != nil {
 		return err
 	}
-	fmt.Printf("Contact %s enregistré.\nEmpreinte de sécurité de %s : %s\n", name, name, SafetyNumber(c.IK))
-	fmt.Println("Compare-la avec celle que " + name + " lit dans « whoami ».")
-	if c.MyBox == nil {
-		fmt.Printf("Il te reste à lui donner ton invitation : relaycli invite %s\n", name)
+	fmt.Printf("Appairage envoyé à %s.\nEmpreinte de sécurité de %s : %s\n", name, name, SafetyNumber(inv.IK))
+	fmt.Println("Compare-la de vive voix avec celle que " + name + " affiche comme sienne.")
+	return nil
+}
+
+// pairFrom traite un bloc reçu par l'invitant avant la fin de l'appairage.
+func pairFrom(s *State, name string, c *Contact, blob []byte) error {
+	if c.PairSecret == nil {
+		return ErrPair
 	}
+	p, err := OpenPair(s.X25519(), s.IK(), c.PairSecret, blob)
+	if err != nil {
+		return err
+	}
+	if bytes.Equal(p.IK, s.IK()) {
+		return ErrPair
+	}
+	for other, oc := range s.Contacts {
+		if other != name && bytes.Equal(oc.IK, p.IK) {
+			return fmt.Errorf("cette identité est déjà enregistrée sous le nom %s", other)
+		}
+	}
+	c.IK, c.XK = p.IK, p.XK
+	c.Their = &TheirBox{Relay: RelayRef{URL: p.URL, FP: p.FP}, WriteID: p.W}
+	c.PairSecret = nil // usage unique
+	fmt.Printf("Appairage avec %s terminé. Empreinte de sécurité de %s : %s\n", name, name, SafetyNumber(c.IK))
 	return nil
 }
 
@@ -308,7 +360,7 @@ func cmdSend(s *State, args []string) error {
 func sendMessage(s *State, name, msg string) (uint64, error) {
 	c := s.Contacts[name]
 	if c == nil || c.Their == nil || c.IK == nil {
-		return 0, fmt.Errorf("contact %s inconnu : enregistre d'abord son invitation avec « add »", name)
+		return 0, fmt.Errorf("contact %s inconnu, ou appairage pas encore terminé", name)
 	}
 	if c.Burned {
 		return 0, fmt.Errorf("%s a effacé son identité : impossible de lui écrire", name)
@@ -393,22 +445,6 @@ func recvFrom(s *State, name string) (int, error) {
 	cl := NewRelayClient(c.MyBox.Relay)
 	key := ed25519.NewKeyFromSeed(c.MyBox.ReadSeed)
 
-	if c.IK == nil {
-		// Sans les clés du contact, on ne peut pas vérifier l'expéditeur : on n'acquitte rien.
-		recs, more, err := cl.Fetch(c.MyBox.BoxID, key, c.MyBox.LastSeq, 50)
-		if err != nil {
-			return 0, err
-		}
-		if len(recs) > 0 {
-			plus := ""
-			if more {
-				plus = "+"
-			}
-			fmt.Printf("%d%s message(s) de %s en attente : enregistre d'abord son invitation avec « add %s ».\n", len(recs), plus, name, name)
-		}
-		return 0, nil
-	}
-
 	shown := 0
 	for {
 		recs, more, err := cl.Fetch(c.MyBox.BoxID, key, c.MyBox.LastSeq, 50)
@@ -419,6 +455,16 @@ func recvFrom(s *State, name string) (int, error) {
 			return shown, nil
 		}
 		for _, r := range recs {
+			if c.IK == nil {
+				// Appairage pas encore terminé : seul un bloc d'appairage valide est accepté.
+				if err := pairFrom(s, name, c, r.Blob); err != nil {
+					fmt.Printf("[%s] bloc n° %d rejeté : %v\n", name, r.Seq, err)
+				} else {
+					shown++
+				}
+				c.MyBox.LastSeq = r.Seq
+				continue
+			}
 			p, err := s.openBlob(c, r.Blob)
 			switch {
 			case err != nil:
@@ -441,7 +487,7 @@ func recvFrom(s *State, name string) (int, error) {
 				c.markSeen(id)
 				c.Burned = true
 				when := time.Unix(p.TS, 0).Local().Format("02/01 15:04:05")
-				fmt.Printf("[%s] !!! %s a changé de relais : son ancienne identité est effacée et il ne peut plus lire cette conversation. Refaites l'échange de QR pour continuer (remove %s, puis invite/add).\n", when, name, name)
+				fmt.Printf("[%s] !!! %s a changé de relais : son ancienne identité est effacée et il ne peut plus lire cette conversation. Refaites l'appairage pour continuer (remove %s, puis invite ou add).\n", when, name, name)
 				shown++
 			case p.Type != TypeText:
 				fmt.Printf("[%s] message n° %d de type %d ignoré\n", name, r.Seq, p.Type)
@@ -480,13 +526,13 @@ func cmdContacts(s *State) error {
 	for _, name := range sortedNames(s) {
 		c := s.Contacts[name]
 		var status []string
-		if c.IK != nil {
+		switch {
+		case c.IK == nil:
+			status = append(status, "en attente de son scan (puis recv)")
+		case c.Burned:
+			status = append(status, "conversation fermée")
+		default:
 			status = append(status, "empreinte "+SafetyNumber(c.IK))
-		} else {
-			status = append(status, "invitation non reçue (add)")
-		}
-		if c.MyBox == nil {
-			status = append(status, "invitation non donnée (invite)")
 		}
 		fmt.Printf("%-16s %s\n", name, strings.Join(status, ", "))
 	}
