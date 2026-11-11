@@ -12,7 +12,7 @@ class MyBox(val relay: RelayRef, val boxId: ByteArray, val writeId: ByteArray, v
 class TheirBox(val relay: RelayRef, val writeId: ByteArray)
 
 // Ajouter les nouvelles valeurs à la fin : l'ordinal est sérialisé.
-enum class MessageStatus { SENDING, SENT, FAILED, RECEIVED, ALERT }
+enum class MessageStatus { SENDING, SENT, FAILED, RECEIVED, ALERT, RELAY_CHANGE }
 
 class ChatMessage(val id: ByteArray, val outgoing: Boolean, val ts: Long, val text: String, var status: MessageStatus)
 

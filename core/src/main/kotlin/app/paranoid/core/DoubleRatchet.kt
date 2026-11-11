@@ -17,6 +17,9 @@ const val TYPE_TEXT: Byte = 1
 /** Alerte « bouton rouge » : l'expéditeur a détruit sa clé privée. Corps vide. */
 const val TYPE_ALERT: Byte = 2
 
+/** L'expéditeur a changé de relais : son ancienne identité est effacée. Corps vide. */
+const val TYPE_RELAY_CHANGE: Byte = 3
+
 private const val MAX_SKIP = 1000L
 private const val MAX_SKIPPED = 2000
 private const val INFO_SK = "relay-dr-v1/sk"

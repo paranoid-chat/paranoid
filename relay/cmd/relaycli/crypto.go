@@ -36,8 +36,9 @@ const (
 	innerHead   = 1 + 16 + 8 + 2
 	MaxText     = innerLen - sigLen - innerHead // 1896 octets
 
-	TypeText  byte = 1
-	TypeAlert byte = 2 // bouton rouge : l'expéditeur a détruit sa clé privée (corps vide)
+	TypeText        byte = 1
+	TypeAlert       byte = 2 // bouton rouge : l'expéditeur a détruit sa clé privée (corps vide)
+	TypeRelayChange byte = 3 // l'expéditeur a changé de relais : ancienne identité effacée (corps vide)
 
 	sigContext = "relay-msg-v1/sig"
 	kdfInfo    = "relay-msg-v1"

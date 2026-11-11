@@ -252,6 +252,10 @@ class DoubleRatchetTest {
         st.contacts["a"] = Contact("a").also { it.burned = true; it.messages.add(ChatMessage(p.id, false, 7, "", MessageStatus.ALERT)) }
         val back = AppState.decode(st.encode())
         assertTrue(back.contacts["a"]!!.burned)
+        val blob3 = a.s.encrypt(a.env, encodeInner(Plain(TYPE_RELAY_CHANGE, randomBytes(16), 8, ByteArray(0))))
+        assertEquals(TYPE_RELAY_CHANGE, decodeInner(b.s.decrypt(b.env, blob3)).type)
+        st.contacts["a"]!!.messages.add(ChatMessage(randomBytes(16), false, 8, "", MessageStatus.RELAY_CHANGE))
+        assertEquals(MessageStatus.RELAY_CHANGE, AppState.decode(st.encode()).contacts["a"]!!.messages[1].status)
         assertEquals(MessageStatus.ALERT, back.contacts["a"]!!.messages[0].status)
     }
 

@@ -47,7 +47,8 @@ class MainActivity : ComponentActivity() {
         setContent {
             ParanoidTheme {
                 val ui by vm.ui.collectAsStateWithLifecycle()
-                BackHandler(enabled = ui.screen is Screen.Chat || ui.screen is Screen.AddContact || ui.screen is Screen.ChangeCodes) {
+                BackHandler(enabled = ui.screen is Screen.Chat || ui.screen is Screen.AddContact || ui.screen is Screen.ChangeCodes ||
+                    ui.screen is Screen.ChangeRelay || ui.screen is Screen.Learn) {
                     vm.goContacts()
                 }
                 when (val s = ui.screen) {
@@ -56,6 +57,8 @@ class MainActivity : ComponentActivity() {
                     is Screen.SetCodes -> SetCodesScreen(s.migrating, ui, vm)
                     Screen.Locked -> LockScreen(ui, vm)
                     Screen.ChangeCodes -> ChangeCodesScreen(ui, vm)
+                    Screen.ChangeRelay -> ChangeRelayScreen(ui, vm)
+                    Screen.Learn -> LearnScreen(ui, vm)
                     Screen.Contacts -> ContactsScreen(ui, vm)
                     Screen.AddContact -> AddContactScreen(ui, vm)
                     is Screen.Chat -> ChatScreen(s.name, ui, vm)

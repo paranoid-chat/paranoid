@@ -311,7 +311,7 @@ func sendMessage(s *State, name, msg string) (uint64, error) {
 		return 0, fmt.Errorf("contact %s inconnu : enregistre d'abord son invitation avec « add »", name)
 	}
 	if c.Burned {
-		return 0, fmt.Errorf("%s a utilisé le bouton rouge : impossible de lui écrire", name)
+		return 0, fmt.Errorf("%s a effacé son identité : impossible de lui écrire", name)
 	}
 	text := []byte(msg)
 	if len(text) > MaxTextV2 {
@@ -432,6 +432,16 @@ func recvFrom(s *State, name string) (int, error) {
 				c.Burned = true
 				when := time.Unix(p.TS, 0).Local().Format("02/01 15:04:05")
 				fmt.Printf("[%s] !!! %s a utilisé le bouton rouge : sa clé privée est détruite et il ne peut plus lire cette conversation. Pense à supprimer ta conversation avec %s (remove %s).\n", when, name, name, name)
+				shown++
+			case p.Type == TypeRelayChange:
+				id := enc(p.ID[:])
+				if c.seen(id) {
+					break
+				}
+				c.markSeen(id)
+				c.Burned = true
+				when := time.Unix(p.TS, 0).Local().Format("02/01 15:04:05")
+				fmt.Printf("[%s] !!! %s a changé de relais : son ancienne identité est effacée et il ne peut plus lire cette conversation. Refaites l'échange de QR pour continuer (remove %s, puis invite/add).\n", when, name, name)
 				shown++
 			case p.Type != TypeText:
 				fmt.Printf("[%s] message n° %d de type %d ignoré\n", name, r.Seq, p.Type)

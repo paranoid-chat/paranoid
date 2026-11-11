@@ -1,4 +1,4 @@
-# Paranoid — v0.5.0
+# Paranoid — v0.6.0
 
 *The Chat app for the truly paranoids.*
 
@@ -12,7 +12,7 @@ Messagerie sans compte : l'identité est une paire de clés créée sur le tél�
 | `core/` | Kotlin pur (JVM) : crypto, Double Ratchet, coffre à deux codes, invitations, client du relais avec épinglage du certificat, sérialisation de l'état. Testé sur JVM et contre le relais Go. |
 | `relay/` | Relais Go (SQLite) et `relaycli`, le client de test en ligne de commande (Linux et Windows). |
 
-## Ce que fait la v0.5
+## Ce que fait la v0.6
 
 - **Identité** : créée au premier lancement, après un test du relais (TLS et empreinte).
 - **Contacts** : nom local, puis affichage de mon QR, puis scan du sien. Avec un PC sans caméra, l'invitation peut aussi être partagée en texte. L'empreinte de sécurité est à comparer de vive voix.
@@ -26,6 +26,8 @@ Messagerie sans compte : l'identité est une paire de clés créée sur le tél�
 
   Le code de destruction de la nouvelle identité est aléatoire : il faut en définir un vrai dans *Changer mes codes*. Chez le destinataire, la conversation affiche l'alerte et n'accepte plus d'envoi.
 - **Changer mes codes** (menu ⋮ de la liste des contacts) : le code actuel est exigé. Le code de destruction saisi dans ce champ déclenche lui aussi le bouton rouge.
+- **Changer de relais** (menu ⋮) : volontairement sans migration, **tout est effacé**. Le code actuel est exigé (le code de destruction y déclenche le bouton rouge), puis le nouveau relais est testé (TLS et empreinte) : en cas d'échec, rien n'est touché. Chaque contact reçoit « X a changé de relais » (5 s maximum) et sa conversation se ferme. Ensuite : nouvelle identité sur le nouveau relais, nouveaux codes, nouvel échange de QR avec chacun.
+- **Comprendre Paranoid** (menu ⋮) : fiches hors ligne, avec schémas, sur les clés, l'empreinte, le relais, le chiffrement, les codes, le stockage, les notifications, le changement de relais, les limites, la vérification et un glossaire. Chaque fiche a un niveau simple et un détail technique (« En savoir plus »). *Mes infos en direct* affiche mon empreinte, le relais et l'empreinte de son certificat, la protection de la clé (StrongBox, TEE ou logiciel) et l'empreinte du certificat qui a signé l'APK.
 - **Pas de notifications**, par choix de sécurité. Les messages attendent sur le relais (jusqu'à 7 jours, 100 au maximum par contact) et arrivent quand l'appli est ouverte et déverrouillée.
 - **Sécurité locale** :
   - état chiffré par une clé de données, dans un coffre à deux codes, lui-même chiffré par une clé non exportable du Keystore (StrongBox si disponible) ;
@@ -66,7 +68,7 @@ Les artefacts se téléchargent depuis l'onglet *Actions* : ouvre l'exécution, 
 3. Sur un Samsung, désactive la **Protection automatique** (*Paramètres → Sécurité et confidentialité*) le temps de l'installation.
 4. Une mise à jour s'installe par-dessus la version précédente et **conserve identité et conversations**, grâce à la même clé de signature.
 
-Le téléphone doit être sur le **Wi-Fi du LAN** : le pare-feu du relais n'accepte que `192.168.1.0/24`.
+Le relais est joignable sur le LAN (`https://192.168.1.252:8443`) et depuis Internet (`https://2.15.30.5`, port 443 redirigé par la box vers 8443). L'adresse choisie à la création de l'identité est celle qui figure dans tes QR : pour être joignable en 4G, il faut l'adresse publique.
 
 ---
 
@@ -134,8 +136,12 @@ N'ouvre qu'**une seule** fenêtre `relaycli` à la fois sur le dossier `pc`. Deu
 | 7 | Pendant le `chat`, verrouiller le téléphone puis saisir le **code de destruction** | Téléphone : s'ouvre comme déverrouillé, sur une liste de contacts vide (empreinte différente). PC : alerte « tel a utilisé le bouton rouge », puis envoi refusé |
 | 7 bis | Verrouiller, puis rouvrir avec le même code de destruction | Même appli vide, sans incohérence. Puis *Changer mes codes* avec ce code comme code actuel |
 | 8 | `& $C -d pc panic --oui` (bouton rouge côté PC) | Téléphone : alerte dans la conversation, saisie remplacée par « Supprimer la conversation » |
+| 9 | Téléphone : ⋮, *Changer de relais*, avec une **mauvaise empreinte** | « empreinte du relais inattendue », rien n'est effacé |
+| 10 | Même chose avec la bonne adresse et la bonne empreinte (par exemple passer du LAN à `https://2.15.30.5`) | PC (`recv` ou `chat`) : « tel a changé de relais », puis envoi refusé. Téléphone : écran de choix des codes, puis liste vide avec une nouvelle empreinte |
+| 11 | *Changer de relais* avec le **code de destruction** comme code actuel | Bouton rouge : alerte « bouton rouge » côté PC, appli vide côté téléphone |
+| 12 | ⋮, *Comprendre Paranoid*, puis *Mes infos en direct* | Empreinte et relais identiques à l'écran principal ; empreinte de signature identique à `apksigner verify --print-certs` |
 
-Après le scénario 7, supprime le contact côté PC (`& $C -d pc remove tel`), puis refais l'appairage avec la nouvelle identité du téléphone. Après le scénario 8, le dossier `pc` est effacé : refais l'`init`, supprime le contact sur le téléphone, puis refais l'appairage.
+Après le scénario 7, supprime le contact côté PC (`& $C -d pc remove tel`), puis refais l'appairage avec la nouvelle identité du téléphone. Après les scénarios 10 et 11, même chose. Après le scénario 8, le dossier `pc` est effacé : refais l'`init`, supprime le contact sur le téléphone, puis refais l'appairage.
 
 ### Diagnostic
 
@@ -166,7 +172,7 @@ Après le scénario 7, supprime le contact côté PC (`& $C -d pc remove tel`), 
 
 | Symptôme | Cause probable |
 |---|---|
-| « Relais injoignable » | Le téléphone n'est pas sur le Wi-Fi du LAN, ou le service `relay` est arrêté (`systemctl status relay`). |
+| « Relais injoignable » | Adresse LAN utilisée hors du Wi-Fi, redirection de la box absente, ou service `relay` arrêté (`systemctl status relay`). |
 | « empreinte du relais inattendue » | L'empreinte saisie ne correspond pas au certificat du relais. |
 | Message « rejeté » côté PC, ou message jamais reçu | Appairage réparti sur deux contacts côté téléphone, ou deux `relaycli` ouverts en même temps. Refais l'appairage d'une traite. |
 | « Données illisibles » au démarrage | La clé Keystore a disparu (appli désinstallée, par exemple). L'identité est perdue, c'est voulu. |

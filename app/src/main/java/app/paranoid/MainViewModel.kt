@@ -10,6 +10,8 @@ import app.paranoid.core.MAX_TEXT
 import app.paranoid.core.MessageStatus
 import app.paranoid.core.Messenger
 import app.paranoid.core.RelayRef
+import app.paranoid.core.TYPE_RELAY_CHANGE
+import app.paranoid.core.formatFingerprint
 import app.paranoid.core.b64
 import app.paranoid.core.randomBytes
 import app.paranoid.core.parseFingerprint
@@ -30,6 +32,8 @@ sealed interface Screen {
     data object Setup : Screen
     data class SetCodes(val migrating: Boolean) : Screen
     data object ChangeCodes : Screen
+    data object ChangeRelay : Screen
+    data object Learn : Screen
     data object Locked : Screen
     data object Contacts : Screen
     data object AddContact : Screen
@@ -57,6 +61,7 @@ data class Ui(
     val screen: Screen = Screen.Loading,
     val mySafety: String = "",
     val relayUrl: String = "",
+    val relayFp: String = "",
     val contacts: List<ContactRow> = emptyList(),
     val chat: List<MessageRow> = emptyList(),
     val add: AddFlow = AddFlow(),
@@ -133,7 +138,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         MessageRow(b64(it.id) + it.outgoing, it.outgoing, it.text, it.ts, it.status)
                     }
                 } ?: emptyList()
-                cur.copy(screen = target, mySafety = m.safetyNumber, relayUrl = m.state.relay.url, contacts = contacts, chat = chat)
+                cur.copy(
+                    screen = target, mySafety = m.safetyNumber, relayUrl = m.state.relay.url,
+                    relayFp = formatFingerprint(m.state.relay.fp), contacts = contacts, chat = chat,
+                )
             }
         }
     }
@@ -225,7 +233,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (m != null) synchronized(m) { messenger = null }
         val relay = old?.relay ?: RelayRef(BuildConfig.DEFAULT_RELAY_URL, parseFingerprint(BuildConfig.DEFAULT_RELAY_FP))
         val fresh = AppState.newIdentity(relay)
-        _ui.value = Ui(screen = Screen.Contacts, mySafety = safetyNumber(fresh.ik), relayUrl = relay.url)
+        _ui.value = Ui(screen = Screen.Contacts, mySafety = safetyNumber(fresh.ik), relayUrl = relay.url, relayFp = formatFingerprint(relay.fp))
         duressJob = viewModelScope.launch(Dispatchers.IO + NonCancellable) {
             store.wipe()
             runCatching {
@@ -256,6 +264,44 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 error(if (r.waitSeconds > 0) "Code actuel incorrect. Prochain essai dans ${r.waitSeconds} s." else "Code actuel incorrect.")
             is StateStore.UnlockResult.Throttled -> error("Trop d'essais. Réessaie dans ${r.waitSeconds} s.")
         }
+    }
+
+    fun goChangeRelay() = _ui.update { it.copy(screen = Screen.ChangeRelay, error = null, info = null) }
+
+    fun keyProtection(): String = runCatching { store.keyProtection() }.getOrDefault("Inconnue")
+
+    fun goLearn() = _ui.update { it.copy(screen = Screen.Learn, error = null, info = null) }
+
+    /**
+     * Changement de relais, volontairement sans migration : tout est perdu.
+     *  1. le code actuel est exigé (le code de destruction y déclenche le bouton rouge) ;
+     *  2. le nouveau relais est testé (TLS et empreinte) avant de toucher à quoi que ce soit ;
+     *  3. chaque contact reçoit « X a changé de relais » sur l'ancien relais (5 s maximum) ;
+     *  4. clé Keystore et fichiers sont détruits, puis une nouvelle identité est créée sur le
+     *     nouveau relais ; ses codes sont à choisir à nouveau.
+     */
+    fun changeRelay(current: String, url: String, fp: String) = action {
+        val relay = RelayRef(url.trim().trimEnd('/'), parseFingerprint(fp))
+        require(relay.url.startsWith("https://")) { "l'adresse du relais doit commencer par https://" }
+        when (val r = store.unlock(current)) {
+            StateStore.UnlockResult.Unlocked -> Unit
+            StateStore.UnlockResult.Duress -> return@action redButton(current)
+            is StateStore.UnlockResult.Wrong ->
+                error(if (r.waitSeconds > 0) "Code actuel incorrect. Prochain essai dans ${r.waitSeconds} s." else "Code actuel incorrect.")
+            is StateStore.UnlockResult.Throttled -> error("Trop d'essais. Réessaie dans ${r.waitSeconds} s.")
+        }
+        val fresh = Messenger.createIdentity(relay) // échoue si le relais est injoignable ou l'empreinte fausse
+        val m = messenger ?: error("appli verrouillée")
+        synchronized(m) {
+            runCatching { m.sendAlerts(5_000, TYPE_RELAY_CHANGE) }
+            messenger = null
+            store.wipe()
+            m.state.identitySeed.fill(0)
+            m.state.x25519Priv.fill(0)
+        }
+        pending = fresh
+        store.beginNew()
+        _ui.value = Ui(screen = Screen.SetCodes(migrating = false), info = "Relais changé. Choisis les codes de ta nouvelle identité.")
     }
 
     /** Verrouille : la clé de données et l'état déchiffré sont oubliés. */

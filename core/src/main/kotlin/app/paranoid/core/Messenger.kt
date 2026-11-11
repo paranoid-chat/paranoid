@@ -74,7 +74,7 @@ class Messenger(
     fun send(name: String, text: String): ChatMessage {
         val c = contact(name)
         val their = c.their
-        if (c.burned) throw IllegalStateException("$name a utilisé le bouton rouge : impossible de lui écrire")
+        if (c.burned) throw IllegalStateException("$name a effacé son identité : impossible de lui écrire")
         if (!c.ready || their == null) throw IllegalStateException("l'échange de QR avec $name n'est pas terminé")
         val body = text.toByteArray(Charsets.UTF_8)
         require(body.size <= MAX_TEXT) { "message trop long (${body.size} octets, max $MAX_TEXT)" }
@@ -136,14 +136,19 @@ class Messenger(
                     val e = env(c)
                     val p = decodeInner(session(c, e).decrypt(e, r.blob))
                     val id = b64(p.id)
-                    if ((p.type == TYPE_TEXT || p.type == TYPE_ALERT) && id !in c.seen) {
+                    if ((p.type == TYPE_TEXT || p.type == TYPE_ALERT || p.type == TYPE_RELAY_CHANGE) && id !in c.seen) {
                         c.seen.addLast(id)
                         while (c.seen.size > 500) c.seen.removeFirst()
-                        val m = if (p.type == TYPE_ALERT) {
-                            c.burned = true
-                            ChatMessage(p.id, false, p.ts, "", MessageStatus.ALERT)
-                        } else {
-                            ChatMessage(p.id, false, p.ts, p.body.toString(Charsets.UTF_8), MessageStatus.RECEIVED)
+                        val m = when (p.type) {
+                            TYPE_ALERT -> {
+                                c.burned = true
+                                ChatMessage(p.id, false, p.ts, "", MessageStatus.ALERT)
+                            }
+                            TYPE_RELAY_CHANGE -> {
+                                c.burned = true
+                                ChatMessage(p.id, false, p.ts, "", MessageStatus.RELAY_CHANGE)
+                            }
+                            else -> ChatMessage(p.id, false, p.ts, p.body.toString(Charsets.UTF_8), MessageStatus.RECEIVED)
                         }
                         c.messages.add(m)
                         out.add(c to m)
@@ -161,19 +166,21 @@ class Messenger(
     }
 
     /**
-     * Bouton rouge : chiffre une alerte pour chaque contact, puis les dépose en parallèle.
-     * Rend la main au plus tard après [timeoutMs] : la destruction qui suit ne doit jamais
-     * attendre le réseau. Renvoie le nombre d'alertes acceptées par le relais.
+     * Bouton rouge ([TYPE_ALERT]) ou changement de relais ([TYPE_RELAY_CHANGE]) : chiffre une
+     * alerte pour chaque contact, puis les dépose en parallèle. Rend la main au plus tard après
+     * [timeoutMs] : l'effacement qui suit ne doit jamais attendre le réseau. Renvoie le nombre
+     * d'alertes acceptées par le relais.
      */
     @Synchronized
-    fun sendAlerts(timeoutMs: Long = 5_000): Int {
+    fun sendAlerts(timeoutMs: Long = 5_000, type: Byte = TYPE_ALERT): Int {
+        require(type == TYPE_ALERT || type == TYPE_RELAY_CHANGE)
         val jobs = ArrayList<Pair<TheirBox, ByteArray>>()
         for (c in state.contacts.values) {
             val their = c.their ?: continue
             if (!c.ready || c.burned) continue
             try {
                 val e = env(c)
-                jobs.add(their to session(c, e).encrypt(e, encodeInner(Plain(TYPE_ALERT, randomBytes(16), System.currentTimeMillis() / 1000, ByteArray(0)))))
+                jobs.add(their to session(c, e).encrypt(e, encodeInner(Plain(type, randomBytes(16), System.currentTimeMillis() / 1000, ByteArray(0)))))
             } catch (ex: Exception) {
                 // Une session cassée ne doit pas empêcher les autres alertes.
             }

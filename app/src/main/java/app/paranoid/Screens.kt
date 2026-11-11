@@ -41,6 +41,8 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -224,6 +226,9 @@ fun ContactsScreen(ui: Ui, vm: MainViewModel) {
                     IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "Options") }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         DropdownMenuItem(text = { Text("Changer mes codes") }, onClick = { menu = false; vm.goChangeCodes() })
+                        DropdownMenuItem(text = { Text("Changer de relais") }, onClick = { menu = false; vm.goChangeRelay() })
+                        HorizontalDivider()
+                        DropdownMenuItem(text = { Text("Comprendre Paranoid") }, onClick = { menu = false; vm.goLearn() })
                     }
                 },
             )
@@ -247,7 +252,7 @@ fun ContactsScreen(ui: Ui, vm: MainViewModel) {
             LazyColumn(Modifier.fillMaxSize()) {
                 items(ui.contacts, key = { it.name }) { c ->
                     val sub = when {
-                        c.burned -> "A utilisé le bouton rouge"
+                        c.burned -> "Conversation fermée"
                         c.pendingFromUnknown > 0 -> "${c.pendingFromUnknown} message(s) en attente : scanne son QR"
                         !c.inviteScanned -> "QR pas encore scanné"
                         !c.inviteShown -> "Ton QR n'a pas encore été montré"
@@ -380,7 +385,7 @@ fun ChatScreen(name: String, ui: Ui, vm: MainViewModel) {
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Text(
-                            "$name a utilisé le bouton rouge : sa clé privée est détruite et il ne peut plus lire cette conversation. Pense à la supprimer.",
+                            "$name a effacé son identité : il ne peut plus lire cette conversation. Pense à la supprimer.",
                             color = MaterialTheme.colorScheme.onErrorContainer,
                         )
                         Button(onClick = { confirm = "remove" }, modifier = Modifier.fillMaxWidth()) { Text("Supprimer la conversation") }
@@ -441,17 +446,22 @@ fun ChatScreen(name: String, ui: Ui, vm: MainViewModel) {
 
 @Composable
 private fun Bubble(m: MessageRow, name: String) {
-    if (m.status == MessageStatus.ALERT) {
+    if (m.status == MessageStatus.ALERT || m.status == MessageStatus.RELAY_CHANGE) {
+        val (title, body) = if (m.status == MessageStatus.ALERT) {
+            "$name a utilisé le bouton rouge" to
+                "Sa clé privée est détruite : il ne pourra plus consulter cette conversation. Pense à supprimer tes conversations avec $name."
+        } else {
+            "$name a changé de relais" to
+                "Son ancienne identité est effacée : il ne pourra plus consulter cette conversation. Pour continuer, supprimez le contact et refaites l'échange de QR."
+        }
         Surface(
             color = MaterialTheme.colorScheme.errorContainer,
             shape = RoundedCornerShape(14.dp),
             modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
         ) {
             Column(Modifier.padding(12.dp)) {
-                Text("$name a utilisé le bouton rouge", style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onErrorContainer)
-                Text("Sa clé privée est détruite : il ne pourra plus consulter cette conversation. Pense à supprimer tes conversations avec $name.",
-                    color = MaterialTheme.colorScheme.onErrorContainer)
+                Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onErrorContainer)
+                Text(body, color = MaterialTheme.colorScheme.onErrorContainer)
                 Text(fmt(m.ts), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onErrorContainer)
             }
         }
@@ -583,6 +593,63 @@ fun ChangeCodesScreen(ui: Ui, vm: MainViewModel) {
                 enabled = cur.isNotEmpty() && !ui.busy,
                 modifier = Modifier.fillMaxWidth(),
             ) { Text(if (ui.busy) "Chiffrement…" else "Enregistrer") }
+        }
+    }
+    Messages(ui, vm)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ChangeRelayScreen(ui: Ui, vm: MainViewModel) {
+    var url by rememberSaveable { mutableStateOf("") }
+    var fp by rememberSaveable { mutableStateOf("") }
+    var cur by remember { mutableStateOf("") }
+    var understood by rememberSaveable { mutableStateOf(false) }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Changer de relais") },
+                navigationIcon = { IconButton(onClick = { vm.goContacts() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Retour") } },
+            )
+        },
+    ) { pad ->
+        Column(
+            Modifier.padding(pad).verticalScroll(rememberScrollState())
+                .windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars)).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Surface(color = MaterialTheme.colorScheme.errorContainer, shape = RoundedCornerShape(12.dp)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.onErrorContainer)
+                        Text("  Tout sera effacé", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onErrorContainer)
+                    }
+                    Text(
+                        "Pour rester simple, il n'y a pas de migration. Ton identité, tes contacts et tes conversations " +
+                            "sont détruits, puis une nouvelle identité est créée sur le nouveau relais.\n\n" +
+                            "Chaque contact reçoit l'alerte « a changé de relais » et sa conversation avec toi est fermée. " +
+                            "Il faudra refaire l'échange de QR en face à face avec chacun, puis choisir de nouveaux codes.",
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                }
+            }
+            Text("Relais actuel : ${ui.relayUrl}", style = MaterialTheme.typography.bodySmall)
+            OutlinedTextField(url, { url = it }, label = { Text("Nouveau relais (https://…)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(fp, { fp = it }, label = { Text("Empreinte SHA-256 du nouveau relais") },
+                modifier = Modifier.fillMaxWidth(), textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace))
+            Text("Le nouveau relais est testé (connexion et empreinte) avant que quoi que ce soit ne soit effacé.",
+                style = MaterialTheme.typography.bodySmall)
+            CodeField(cur, { cur = it }, "Code actuel")
+            Row(Modifier.fillMaxWidth().clickable { understood = !understood }, verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(understood, { understood = it })
+                Text("J'ai compris que tout sera effacé, sans retour possible.")
+            }
+            Button(
+                onClick = { vm.changeRelay(cur, url, fp); cur = "" },
+                enabled = understood && cur.isNotEmpty() && url.isNotBlank() && fp.isNotBlank() && !ui.busy,
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text(if (ui.busy) "Test du relais, envoi des alertes…" else "Tout effacer et changer de relais") }
         }
     }
     Messages(ui, vm)

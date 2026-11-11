@@ -2,6 +2,7 @@ package app.paranoid
 
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyInfo
 import android.security.keystore.KeyProperties
 import android.security.keystore.StrongBoxUnavailableException
 import android.util.AtomicFile
@@ -15,6 +16,7 @@ import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
+import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.GCMParameterSpec
 
 /**
@@ -155,6 +157,19 @@ class StateStore(context: Context) {
         runCatching { keyStore().deleteEntry(ALIAS) }
         lock()
         for (f in listOf(stateFile, lockFile, attemptsFile, legacyDek, legacyState)) runCatching { f.delete() }
+    }
+
+    /** Où vit la clé Keystore (pour « Mes infos en direct »). Ne lit que ses propriétés. */
+    @Synchronized
+    fun keyProtection(): String {
+        val key = keyStore().getKey(ALIAS, null) as? SecretKey ?: return "clé absente"
+        val info = SecretKeyFactory.getInstance(key.algorithm, "AndroidKeyStore").getKeySpec(key, KeyInfo::class.java) as KeyInfo
+        return when (info.securityLevel) {
+            KeyProperties.SECURITY_LEVEL_STRONGBOX -> "StrongBox (puce de sécurité dédiée)"
+            KeyProperties.SECURITY_LEVEL_TRUSTED_ENVIRONMENT -> "TEE (zone sécurisée du processeur)"
+            KeyProperties.SECURITY_LEVEL_SOFTWARE -> "Logiciel (pas de matériel sécurisé)"
+            else -> "Inconnue"
+        }
     }
 
     /** Chiffre le coffre par la clé Keystore et l'écrit (création de la clé si besoin). */
