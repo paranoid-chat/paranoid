@@ -1,4 +1,4 @@
-# Paranoid — v1.1.0
+# Paranoid — v1.1.1
 
 *The Chat app for the truly paranoids.*
 
@@ -20,17 +20,18 @@ Documents de référence : `PROTOCOL.md` (client ↔ relais, contenu du QR), `ME
 - **Appairage en un seul scan** : l'un affiche son QR, l'autre le scanne en face à face. Le téléphone qui scanne envoie ses clés par le relais, chiffrées par un secret à usage unique contenu dans le QR et signées par sa clé d'identité ; l'appairage se termine tout seul chez celui qui a affiché le QR. Les empreintes sont ensuite à comparer de vive voix. Avec un PC sans caméra, l'invitation passe en texte.
 - **Messages** : texte chiffré par le Double Ratchet, 1963 octets maximum.
 - **Code de déverrouillage** : Argon2id (64 Mio, 3 passes). Après 5 échecs, attente de 30 s, doublée à chaque échec (1 h maximum). Verrouillage avec le cadenas, ou après 60 s en arrière-plan.
-- **Code de destruction (bouton rouge)**, saisi à la place du code normal. L'appli fait **comme si le code était bon** et s'ouvre sur une liste de contacts vide. En arrière-plan :
+- **Code de destruction**, saisi à la place du code normal. L'appli fait **comme si le code était bon** et s'ouvre sur une liste de contacts vide. En arrière-plan :
   1. la clé Keystore et le coffre sont détruits ;
-  2. une nouvelle identité est créée ; le code qui vient d'être saisi devient son code de déverrouillage, son code de destruction est aléatoire (à redéfinir dans *Changer mes codes*) ;
-  3. depuis la mémoire, l'alerte « X a utilisé le bouton rouge » part chez tous les contacts (5 s maximum) ;
+  2. une nouvelle identité est créée ; le code qui vient d'être saisi devient son code de déverrouillage, son code de destruction est aléatoire (à redéfinir dans *Modification des codes*) ;
+  3. depuis la mémoire, l'alerte « X a utilisé son code de destruction » part chez tous les contacts (5 s maximum) ;
   4. l'ancien état est effacé de la mémoire.
 
   Chez le destinataire, la conversation affiche l'alerte et n'accepte plus d'envoi.
-- **Changer mes codes** (menu ⋮) : le code actuel est exigé ; le code de destruction y déclenche le bouton rouge.
-- **Changer de relais** (menu ⋮) : volontairement sans migration, **tout est effacé**. Le code actuel est exigé (le code de destruction y déclenche le bouton rouge), puis le nouveau relais est testé : en cas d'échec, rien n'est touché. Chaque contact reçoit « X a changé de relais » et sa conversation se ferme. Ensuite : nouvelle identité, nouveaux codes, nouvel appairage avec chacun.
-- **Paramètres** (menu ⋮) : durée de conservation de l'historique sur un curseur (pour toujours, 1 an, 6 mois, 3 mois, 1 mois, 1 semaine, 3 jours, 24 heures). Les messages plus anciens sont effacés de ce téléphone au déverrouillage, à chaque relève et dès que le réglage change (confirmation avant d'effacer). Rien n'est effacé chez les contacts. Les alertes « bouton rouge » et « changement de relais » sont toujours gardées.
-- **Comprendre Paranoid** (menu ⋮) : fiches hors ligne avec schémas, à deux niveaux (simple, puis technique), sur l'identité, l'appairage, le relais, le chiffrement, les codes, le stockage, les notifications, le changement de relais, les limites, la vérification et un glossaire. *Mes infos en direct* affiche l'empreinte de sécurité, le relais et l'empreinte de son certificat, la protection de la clé (StrongBox, TEE ou logiciel) et l'empreinte du certificat de signature de l'APK.
+- **Modification des codes** (menu ⋮) : le code actuel est exigé ; le code de destruction y a le même effet qu'au déverrouillage.
+- **Changer de relais** (menu ⋮) : volontairement sans migration, **tout est effacé**. Le code actuel est exigé (le code de destruction y a le même effet qu'au déverrouillage), puis le nouveau relais est testé : en cas d'échec, rien n'est touché. Chaque contact reçoit « X a changé de relais » et sa conversation se ferme. Ensuite : nouvelle identité, nouveaux codes, nouvel appairage avec chacun.
+- **Conservation de l'historique** (menu ⋮) : durée de conservation de l'historique sur un curseur (pour toujours, 1 an, 6 mois, 3 mois, 1 mois, 1 semaine, 3 jours, 24 heures). Les messages plus anciens sont effacés de ce téléphone au déverrouillage, à chaque relève et dès que le réglage change (confirmation avant d'effacer). Rien n'est effacé chez les contacts. Les alertes « code de destruction » et « changement de relais » sont toujours gardées.
+- **Comprendre Paranoid** (menu ⋮) : fiches hors ligne avec schémas, à deux niveaux (simple, puis technique), sur l'identité, l'appairage, le relais, le chiffrement, les codes, le stockage, les notifications, le changement de relais, les limites, la vérification et un glossaire.
+- **Mes infos en direct** (menu ⋮, en dernier) : affiche l'empreinte de sécurité, le relais et l'empreinte de son certificat, la protection de la clé (StrongBox, TEE ou logiciel) et l'empreinte du certificat de signature de l'APK.
 - **Clavier sans apprentissage** : chaque champ de saisie demande au clavier de ne rien apprendre ni mémoriser (`IME_FLAG_NO_PERSONALIZED_LEARNING`, mode incognito sur Gboard).
 - **Relais plein** : le relais refuse les nouvelles boîtes au-delà de 90 % de sa taille maximale, et les dépôts à 100 % ou quand le disque est presque plein ; l'appli affiche « le relais est plein ».
 - **Pas de notifications**, par choix de sécurité. Les messages attendent sur le relais (7 jours, 100 au maximum par contact) et arrivent quand l'appli est ouverte et déverrouillée.
@@ -42,7 +43,7 @@ Android 13 minimum.
 
 - **Code de destruction détectable** : le coffre contient deux emplacements. Une analyse des fichiers montre qu'il existe deux codes, sans dire lequel détruit.
 - **Compteur d'essais contournable** : il est stocké dans un fichier, qu'un attaquant root pourrait restaurer.
-- **Alerte sans réseau** : sans réseau au moment du bouton rouge, l'alerte ne part pas, mais la destruction a lieu.
+- **Alerte sans réseau** : sans réseau au moment du code de destruction, l'alerte ne part pas, mais la destruction a lieu.
 - **QR photographié** : quelqu'un qui photographie un QR et l'utilise avant le vrai contact est appairé à sa place. La comparaison des empreintes le révèle.
 - **Clavier** : la demande « sans apprentissage » peut être ignorée par un clavier tiers.
 - **Métadonnées** : le relais voit les adresses IP et les heures.
@@ -140,14 +141,14 @@ Tape un message puis Entrée. Les messages du téléphone s'affichent au fil de 
 | 8 | Appli en arrière-plan plus de 60 s | Reverrouillée au retour |
 | 9 | Installer une nouvelle version par-dessus | Identité et conversations conservées |
 | 10 | Gboard : taper un mot inhabituel dans un message | Gboard affiche le mode incognito ; le mot n'est pas proposé ensuite dans d'autres applis |
-| 11 | Pendant le `chat`, verrouiller le téléphone puis saisir le **code de destruction** | Téléphone : liste de contacts vide, empreinte différente. PC : alerte « tel a utilisé le bouton rouge », puis envoi refusé |
-| 12 | Rouvrir avec le même code de destruction | Même appli vide ; puis *Changer mes codes* avec ce code comme code actuel |
-| 13 | `& $C -d pc panic --oui` (bouton rouge côté PC) | Téléphone : alerte dans la conversation, saisie remplacée par « Supprimer la conversation » |
+| 11 | Pendant le `chat`, verrouiller le téléphone puis saisir le **code de destruction** | Téléphone : liste de contacts vide, empreinte différente. PC : alerte « tel a utilisé son code de destruction », puis envoi refusé |
+| 12 | Rouvrir avec le même code de destruction | Même appli vide ; puis *Modification des codes* avec ce code comme code actuel |
+| 13 | `& $C -d pc panic --oui` (code de destruction côté PC) | Téléphone : alerte dans la conversation, saisie remplacée par « Supprimer la conversation » |
 | 14 | *Changer de relais* avec une mauvaise empreinte | « empreinte du relais inattendue », rien n'est effacé |
 | 15 | *Changer de relais* valide (par exemple du LAN vers l'adresse publique) | PC : « tel a changé de relais », envoi refusé. Téléphone : choix des codes, puis liste vide |
 | 16 | *Changer de relais* avec le code de destruction | Bouton rouge |
-| 17 | *Comprendre Paranoid → Mes infos en direct* | Empreinte et relais identiques à l'écran principal ; signature identique à `apksigner verify --print-certs` |
-| 18 | *Paramètres* : curseur sur « 24 heures » avec des messages plus anciens | Confirmation « Effacer N message(s) ? », puis messages effacés ; les cartes d'alerte restent |
+| 17 | *Mes infos en direct* | Empreinte et relais identiques à l'écran principal ; signature identique à `apksigner verify --print-certs` |
+| 18 | *Conservation de l'historique* : curseur sur « 24 heures » avec des messages plus anciens | Confirmation « Effacer N message(s) ? », puis messages effacés ; les cartes d'alerte restent |
 | 19 | Curseur sur « 24 heures », puis appli fermée plus de 24 h | Au déverrouillage, les messages de plus de 24 h ont disparu |
 | 20 | Relais lancé avec `--max-db 12K` (test seulement), puis plusieurs envois | « le relais est plein » après quelques messages (mesure toutes les 10 s) |
 
