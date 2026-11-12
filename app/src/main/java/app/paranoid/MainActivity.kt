@@ -48,7 +48,7 @@ class MainActivity : ComponentActivity() {
             ParanoidTheme { NoPersonalizedLearning {
                 val ui by vm.ui.collectAsStateWithLifecycle()
                 BackHandler(enabled = ui.screen is Screen.Chat || ui.screen is Screen.AddContact || ui.screen is Screen.ChangeCodes ||
-                    ui.screen is Screen.ChangeRelay || ui.screen is Screen.Learn || ui.screen is Screen.Settings) {
+                    ui.screen is Screen.ChangeRelay || ui.screen is Screen.Learn || ui.screen is Screen.Settings || ui.screen is Screen.MyInfo) {
                     vm.goContacts()
                 }
                 when (val s = ui.screen) {
@@ -60,6 +60,7 @@ class MainActivity : ComponentActivity() {
                     Screen.ChangeRelay -> ChangeRelayScreen(ui, vm)
                     Screen.Learn -> LearnScreen(ui, vm)
                     Screen.Settings -> SettingsScreen(ui, vm)
+                    Screen.MyInfo -> MyInfoScreen(ui, vm)
                     Screen.Contacts -> ContactsScreen(ui, vm)
                     Screen.AddContact -> AddContactScreen(ui, vm)
                     is Screen.Chat -> ChatScreen(s.name, ui, vm)

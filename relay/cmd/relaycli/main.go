@@ -477,7 +477,7 @@ func recvFrom(s *State, name string) (int, error) {
 				c.markSeen(id)
 				c.Burned = true
 				when := time.Unix(p.TS, 0).Local().Format("02/01 15:04:05")
-				fmt.Printf("[%s] !!! %s a utilisé le bouton rouge : sa clé privée est détruite et il ne peut plus lire cette conversation. Pense à supprimer ta conversation avec %s (remove %s).\n", when, name, name, name)
+				fmt.Printf("[%s] !!! %s a utilisé son code de destruction : sa clé privée est détruite et cette conversation ne lui parvient plus. Pensez à supprimer la conversation avec %s (remove %s).\n", when, name, name, name)
 				shown++
 			case p.Type == TypeRelayChange:
 				id := enc(p.ID[:])

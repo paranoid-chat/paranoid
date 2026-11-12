@@ -16,8 +16,8 @@ import javax.net.ssl.X509TrustManager
 class RelayRef(val url: String, val fp: ByteArray)
 
 open class RelayException(msg: String, val status: Int = 0) : Exception(msg)
-class QuotaFullException : RelayException("la boîte du destinataire est pleine : réessaie plus tard", 507)
-class RelayFullException : RelayException("le relais est plein : réessaie plus tard, ou préviens son administrateur", 507)
+class QuotaFullException : RelayException("la boîte du destinataire est pleine : réessayer plus tard", 507)
+class RelayFullException : RelayException("le relais est plein : réessayer plus tard, ou prévenir son administrateur", 507)
 class PinningException(msg: String) : CertificateException(msg)
 
 class Record(val seq: Long, val ts: Long, val blob: ByteArray)
@@ -97,7 +97,7 @@ class RelayClient(private val ref: RelayRef, private val timeoutMs: Int = 20_000
 
     private fun fail(r: Response): Nothing {
         if (r.full) throw RelayFullException()
-        if (r.code == 429) throw RelayException("relais : trop de requêtes, réessaie dans ${r.retryAfter} s", 429)
+        if (r.code == 429) throw RelayException("relais : trop de requêtes, nouvel essai possible dans ${r.retryAfter} s", 429)
         throw RelayException("relais : ${r.code} (${r.body.toString(Charsets.UTF_8).trim()})", r.code)
     }
 

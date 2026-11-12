@@ -59,7 +59,7 @@ fun SettingsScreen(ui: Ui, vm: MainViewModel) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Paramètres") },
+                title = { Text("Conservation de l'historique") },
                 navigationIcon = { IconButton(onClick = { vm.goContacts() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Retour") } },
             )
         },
@@ -94,9 +94,7 @@ fun SettingsScreen(ui: Ui, vm: MainViewModel) {
             }
             Text(
                 "Les messages plus anciens que cette durée sont effacés de ce téléphone : au déverrouillage, " +
-                    "à chaque relève et dès que tu changes ce réglage. Rien n'est effacé chez tes contacts.\n\n" +
-                    "Les alertes « bouton rouge » et « changement de relais » sont toujours gardées : elles indiquent " +
-                    "pourquoi une conversation est fermée.",
+                    "à chaque relève et dès que ce réglage change. Rien n'est effacé chez les contacts.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

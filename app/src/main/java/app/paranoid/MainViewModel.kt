@@ -35,6 +35,7 @@ sealed interface Screen {
     data object ChangeRelay : Screen
     data object Learn : Screen
     data object Settings : Screen
+    data object MyInfo : Screen
     data object Locked : Screen
     data object Contacts : Screen
     data object AddContact : Screen
@@ -210,7 +211,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             StateStore.UnlockResult.Duress -> redButton(code)
             is StateStore.UnlockResult.Wrong ->
                 error(if (r.waitSeconds > 0) "Code incorrect. Prochain essai dans ${r.waitSeconds} s." else "Code incorrect.")
-            is StateStore.UnlockResult.Throttled -> error("Trop d'essais. Réessaie dans ${r.waitSeconds} s.")
+            is StateStore.UnlockResult.Throttled -> error("Trop d'essais. Nouvel essai possible dans ${r.waitSeconds} s.")
         }
     }
 
@@ -259,9 +260,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             StateStore.UnlockResult.Duress -> redButton(current)
             is StateStore.UnlockResult.Wrong ->
                 error(if (r.waitSeconds > 0) "Code actuel incorrect. Prochain essai dans ${r.waitSeconds} s." else "Code actuel incorrect.")
-            is StateStore.UnlockResult.Throttled -> error("Trop d'essais. Réessaie dans ${r.waitSeconds} s.")
+            is StateStore.UnlockResult.Throttled -> error("Trop d'essais. Nouvel essai possible dans ${r.waitSeconds} s.")
         }
     }
+
+    fun goMyInfo() = _ui.update { it.copy(screen = Screen.MyInfo, error = null, info = null) }
 
     fun goSettings() = _ui.update { it.copy(screen = Screen.Settings, error = null, info = null) }
 
@@ -298,7 +301,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             StateStore.UnlockResult.Duress -> return@action redButton(current)
             is StateStore.UnlockResult.Wrong ->
                 error(if (r.waitSeconds > 0) "Code actuel incorrect. Prochain essai dans ${r.waitSeconds} s." else "Code actuel incorrect.")
-            is StateStore.UnlockResult.Throttled -> error("Trop d'essais. Réessaie dans ${r.waitSeconds} s.")
+            is StateStore.UnlockResult.Throttled -> error("Trop d'essais. Nouvel essai possible dans ${r.waitSeconds} s.")
         }
         val fresh = Messenger.createIdentity(relay) // échoue si le relais est injoignable ou l'empreinte fausse
         val m = messenger ?: error("appli verrouillée")
@@ -311,7 +314,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         pending = fresh
         store.beginNew()
-        _ui.value = Ui(screen = Screen.SetCodes(migrating = false), info = "Relais changé. Choisis les codes de ta nouvelle identité.")
+        _ui.value = Ui(screen = Screen.SetCodes(migrating = false), info = "Relais changé. Choisir les codes de la nouvelle identité.")
     }
 
     /** Verrouille : la clé de données et l'état déchiffré sont oubliés. */

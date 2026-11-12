@@ -28,7 +28,7 @@ class Invite(val ik: ByteArray, val xk: ByteArray, val relays: List<InviteRelay>
                 null
             } ?: throw InviteException("invitation illisible (JSON)")
             val v = (obj["v"] as? Number)?.toInt()
-            if (v != 2) throw InviteException("version d'invitation $v non prise en charge : mets l'appli à jour des deux côtés")
+            if (v != 2) throw InviteException("version d'invitation $v non prise en charge  : mettre l'appli à jour des deux côtés")
             val ik = obj.bytes("ik")
             val xk = obj.bytes("xk")
             val secret = obj.bytes("s")

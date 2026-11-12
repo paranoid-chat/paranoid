@@ -1,12 +1,8 @@
 package app.paranoid
 
-import android.content.ClipData
-import android.content.ClipDescription
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.os.PersistableBundle
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -42,7 +38,6 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -135,12 +130,6 @@ private fun qrBitmap(text: String, size: Int = 720): ImageBitmap {
 }
 
 /** Copie marquée « sensible » : Android masque l'aperçu du presse-papiers. */
-private fun copySensitive(ctx: Context, label: String, text: String) {
-    val clip = ClipData.newPlainText(label, text)
-    clip.description.extras = PersistableBundle().apply { putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true) }
-    ctx.getSystemService(ClipboardManager::class.java).setPrimaryClip(clip)
-}
-
 /** Menu de partage Android : pour transmettre l'invitation à un PC sans caméra. */
 private fun shareInvite(ctx: Context, invite: String) {
     val send = Intent(Intent.ACTION_SEND).apply {
@@ -225,11 +214,12 @@ fun ContactsScreen(ui: Ui, vm: MainViewModel) {
                     var menu by remember { mutableStateOf(false) }
                     IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "Options") }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                        DropdownMenuItem(text = { Text("Changer mes codes") }, onClick = { menu = false; vm.goChangeCodes() })
+                        DropdownMenuItem(text = { Text("Modification des codes") }, onClick = { menu = false; vm.goChangeCodes() })
                         DropdownMenuItem(text = { Text("Changer de relais") }, onClick = { menu = false; vm.goChangeRelay() })
                         HorizontalDivider()
-                        DropdownMenuItem(text = { Text("Paramètres") }, onClick = { menu = false; vm.goSettings() })
+                        DropdownMenuItem(text = { Text("Conservation de l'historique") }, onClick = { menu = false; vm.goSettings() })
                         DropdownMenuItem(text = { Text("Comprendre Paranoid") }, onClick = { menu = false; vm.goLearn() })
+                        DropdownMenuItem(text = { Text("Mes infos en direct") }, onClick = { menu = false; vm.goMyInfo() })
                     }
                 },
             )
@@ -247,7 +237,7 @@ fun ContactsScreen(ui: Ui, vm: MainViewModel) {
             Spacer(Modifier.height(8.dp))
             HorizontalDivider()
             if (ui.contacts.isEmpty()) {
-                Text("Aucun contact. Appuie sur + : l'un affiche son QR, l'autre le scanne, en face à face.",
+                Text("Aucun contact. Appuyer sur + : l'un affiche son QR, l'autre le scanne, en face à face.",
                     modifier = Modifier.padding(24.dp), style = MaterialTheme.typography.bodyMedium)
             }
             LazyColumn(Modifier.fillMaxSize()) {
@@ -298,7 +288,7 @@ fun AddContactScreen(ui: Ui, vm: MainViewModel) {
             val invite = ui.add.invite
             if (invite == null) {
                 Text("Un seul scan suffit : l'un affiche son QR, l'autre le scanne, en face à face.")
-                OutlinedTextField(name, { name = it }, label = { Text("Nom du contact (reste sur ton téléphone)") },
+                OutlinedTextField(name, { name = it }, label = { Text("Nom du contact (reste sur ce téléphone)") },
                     singleLine = true, modifier = Modifier.fillMaxWidth())
                 Button(onClick = { vm.createInvite(name) }, enabled = name.isNotBlank() && !ui.busy, modifier = Modifier.fillMaxWidth()) {
                     Text(if (ui.busy) "Création de la boîte…" else "Afficher mon QR")
@@ -313,8 +303,8 @@ fun AddContactScreen(ui: Ui, vm: MainViewModel) {
                     enabled = name.isNotBlank() && !ui.busy, modifier = Modifier.fillMaxWidth(),
                 ) { Text(if (ui.busy) "Envoi de l'appairage…" else "Scanner son QR") }
                 HorizontalDivider()
-                Text("Avec un PC sans caméra : colle ici l'invitation qu'il t'a transmise.", style = MaterialTheme.typography.bodySmall)
-                OutlinedTextField(pasted, { pasted = it }, label = { Text("Son invitation") },
+                Text("Si vous avez reçu le contenu du QR par texte : le coller ici.", style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(pasted, { pasted = it }, label = { Text("Contenu du QR") },
                     textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), modifier = Modifier.fillMaxWidth())
                 OutlinedButton(onClick = { vm.addScanned(name, pasted) }, enabled = name.isNotBlank() && pasted.isNotBlank() && !ui.busy,
                     modifier = Modifier.fillMaxWidth()) { Text("Ajouter depuis le texte") }
@@ -324,7 +314,7 @@ fun AddContactScreen(ui: Ui, vm: MainViewModel) {
                 Text("Comparez-la de vive voix avec celle que ${ui.add.name} voit comme « Mon empreinte ». Si elles diffèrent, supprimez le contact.")
                 Button(onClick = { vm.openChat(ui.add.name) }, modifier = Modifier.fillMaxWidth()) { Text("Ouvrir la discussion") }
             } else {
-                Text("Fais scanner ce QR par ${ui.add.name}, en face à face uniquement. Il ne sert qu'une fois.")
+                Text("Faire scanner ce QR par ${ui.add.name}.")
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Image(remember(invite) { qrBitmap(invite) }, "Mon QR pour ${ui.add.name}",
                         filterQuality = FilterQuality.None, modifier = Modifier.size(280.dp))
@@ -334,16 +324,10 @@ fun AddContactScreen(ui: Ui, vm: MainViewModel) {
                     CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                     Text("  En attente du scan de ${ui.add.name}…")
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    OutlinedButton(onClick = { copySensitive(ctx, "Invitation Paranoid", invite) }, modifier = Modifier.weight(1f)) {
-                        Text("Copier")
-                    }
-                    OutlinedButton(onClick = { shareInvite(ctx, invite) }, modifier = Modifier.weight(1f)) {
-                        Text("Partager")
-                    }
+                Text("Partager le contenu du QR code si votre destinataire est distant.", style = MaterialTheme.typography.bodySmall)
+                OutlinedButton(onClick = { shareInvite(ctx, invite) }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Partager")
                 }
-                Text("Pour un PC sans caméra, transmets l'invitation en texte : il l'ajoute avec relaycli.",
-                    style = MaterialTheme.typography.bodySmall)
             }
         }
     }
@@ -387,7 +371,7 @@ fun ChatScreen(name: String, ui: Ui, vm: MainViewModel) {
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Text(
-                            "$name a effacé son identité : il ne peut plus lire cette conversation. Pense à la supprimer.",
+                            "$name a effacé son identité : cette conversation ne lui parvient plus. Elle peut être supprimée.",
                             color = MaterialTheme.colorScheme.onErrorContainer,
                         )
                         Button(onClick = { confirm = "remove" }, modifier = Modifier.fillMaxWidth()) { Text("Supprimer la conversation") }
@@ -450,11 +434,11 @@ fun ChatScreen(name: String, ui: Ui, vm: MainViewModel) {
 private fun Bubble(m: MessageRow, name: String) {
     if (m.status == MessageStatus.ALERT || m.status == MessageStatus.RELAY_CHANGE) {
         val (title, body) = if (m.status == MessageStatus.ALERT) {
-            "$name a utilisé le bouton rouge" to
-                "Sa clé privée est détruite : il ne pourra plus consulter cette conversation. Pense à supprimer tes conversations avec $name."
+            "$name a utilisé son code de destruction" to
+                "Sa clé privée est détruite : cette conversation ne lui parvient plus. Pensez à supprimer vos conversations avec $name."
         } else {
             "$name a changé de relais" to
-                "Son ancienne identité est effacée : il ne pourra plus consulter cette conversation. Pour continuer, supprimez le contact et refaites l'appairage."
+                "Son ancienne identité est effacée : cette conversation ne lui parvient plus. Pour continuer, supprimer le contact et refaire l'appairage."
         }
         Surface(
             color = MaterialTheme.colorScheme.errorContainer,
@@ -517,17 +501,17 @@ fun SetCodesScreen(migrating: Boolean, ui: Ui, vm: MainViewModel) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Spacer(Modifier.height(32.dp))
-            Text("Tes deux codes", style = MaterialTheme.typography.headlineSmall)
+            Text("Les deux codes", style = MaterialTheme.typography.headlineSmall)
             if (migrating) Text("Nouvelle version : Paranoid est désormais protégé par un code.")
             Text("Code de déverrouillage : ouvre l'appli. Au moins ${vm.minCode} caractères.")
             CodeField(u1, { u1 = it }, "Code de déverrouillage")
-            CodeField(u2, { u2 = it }, "Confirme le code de déverrouillage")
+            CodeField(u2, { u2 = it }, "Confirmer le code de déverrouillage")
             HorizontalDivider()
-            Text("Code de destruction (bouton rouge) : à la place du code normal, il alerte tous tes contacts, " +
-                "détruit ta clé privée et efface tout.",
+            Text("Code de destruction : saisi à la place du code normal, il alerte tous les contacts, " +
+                "détruit la clé privée et efface tout.",
                 color = MaterialTheme.colorScheme.error)
             CodeField(d1, { d1 = it }, "Code de destruction")
-            CodeField(d2, { d2 = it }, "Confirme le code de destruction")
+            CodeField(d2, { d2 = it }, "Confirmer le code de destruction")
             Button(onClick = { vm.setCodes(u1, u2, d1, d2) }, enabled = !ui.busy, modifier = Modifier.fillMaxWidth()) {
                 Text(if (ui.busy) "Chiffrement…" else "Enregistrer")
             }
@@ -570,7 +554,7 @@ fun ChangeCodesScreen(ui: Ui, vm: MainViewModel) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Changer mes codes") },
+                title = { Text("Modification des codes") },
                 navigationIcon = { IconButton(onClick = { vm.goContacts() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Retour") } },
             )
         },
@@ -584,12 +568,12 @@ fun ChangeCodesScreen(ui: Ui, vm: MainViewModel) {
             HorizontalDivider()
             Text("Nouveau code de déverrouillage (au moins ${vm.minCode} caractères).")
             CodeField(u1, { u1 = it }, "Nouveau code de déverrouillage")
-            CodeField(u2, { u2 = it }, "Confirme le nouveau code de déverrouillage")
+            CodeField(u2, { u2 = it }, "Confirmer le nouveau code de déverrouillage")
             HorizontalDivider()
-            Text("Nouveau code de destruction (bouton rouge) : à la place du code normal, il alerte tous tes contacts, " +
-                "détruit ta clé privée et efface tout.", color = MaterialTheme.colorScheme.error)
+            Text("Nouveau code de destruction : saisi à la place du code normal, il alerte tous les contacts, " +
+                "détruit la clé privée et efface tout.", color = MaterialTheme.colorScheme.error)
             CodeField(d1, { d1 = it }, "Nouveau code de destruction")
-            CodeField(d2, { d2 = it }, "Confirme le nouveau code de destruction")
+            CodeField(d2, { d2 = it }, "Confirmer le nouveau code de destruction")
             Button(
                 onClick = { vm.changeCodes(cur, u1, u2, d1, d2); cur = ""; u1 = ""; u2 = ""; d1 = ""; d2 = "" },
                 enabled = cur.isNotEmpty() && !ui.busy,
@@ -606,7 +590,6 @@ fun ChangeRelayScreen(ui: Ui, vm: MainViewModel) {
     var url by rememberSaveable { mutableStateOf("") }
     var fp by rememberSaveable { mutableStateOf("") }
     var cur by remember { mutableStateOf("") }
-    var understood by rememberSaveable { mutableStateOf(false) }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -627,10 +610,9 @@ fun ChangeRelayScreen(ui: Ui, vm: MainViewModel) {
                         Text("  Tout sera effacé", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onErrorContainer)
                     }
                     Text(
-                        "Pour rester simple, il n'y a pas de migration. Ton identité, tes contacts et tes conversations " +
-                            "sont détruits, puis une nouvelle identité est créée sur le nouveau relais.\n\n" +
-                            "Chaque contact reçoit l'alerte « a changé de relais » et sa conversation avec toi est fermée. " +
-                            "Il faudra refaire l'appairage en face à face avec chacun, puis choisir de nouveaux codes.",
+                        "L'identité, les contacts et les conversations sont détruits, puis une nouvelle identité est " +
+                            "créée sur le nouveau relais.\n\n" +
+                            "Chaque contact reçoit l'alerte « X a changé de relais » et sa conversation est fermée.",
                         color = MaterialTheme.colorScheme.onErrorContainer,
                     )
                 }
@@ -642,13 +624,9 @@ fun ChangeRelayScreen(ui: Ui, vm: MainViewModel) {
             Text("Le nouveau relais est testé (connexion et empreinte) avant que quoi que ce soit ne soit effacé.",
                 style = MaterialTheme.typography.bodySmall)
             CodeField(cur, { cur = it }, "Code actuel")
-            Row(Modifier.fillMaxWidth().clickable { understood = !understood }, verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(understood, { understood = it })
-                Text("J'ai compris que tout sera effacé, sans retour possible.")
-            }
             Button(
                 onClick = { vm.changeRelay(cur, url, fp); cur = "" },
-                enabled = understood && cur.isNotEmpty() && url.isNotBlank() && fp.isNotBlank() && !ui.busy,
+                enabled = cur.isNotEmpty() && url.isNotBlank() && fp.isNotBlank() && !ui.busy,
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                 modifier = Modifier.fillMaxWidth(),
             ) { Text(if (ui.busy) "Test du relais, envoi des alertes…" else "Tout effacer et changer de relais") }
