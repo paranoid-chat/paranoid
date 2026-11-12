@@ -1,4 +1,4 @@
-# Paranoid — v1.1.1
+# Paranoid — v1.1.2
 
 *The Chat app for the truly paranoids.*
 

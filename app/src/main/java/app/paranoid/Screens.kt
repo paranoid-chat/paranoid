@@ -287,7 +287,7 @@ fun AddContactScreen(ui: Ui, vm: MainViewModel) {
         ) {
             val invite = ui.add.invite
             if (invite == null) {
-                Text("Un seul scan suffit : l'un affiche son QR, l'autre le scanne, en face à face.")
+                Text("L'un affiche son QR, l'autre le scanne.")
                 OutlinedTextField(name, { name = it }, label = { Text("Nom du contact (reste sur ce téléphone)") },
                     singleLine = true, modifier = Modifier.fillMaxWidth())
                 Button(onClick = { vm.createInvite(name) }, enabled = name.isNotBlank() && !ui.busy, modifier = Modifier.fillMaxWidth()) {
