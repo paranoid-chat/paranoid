@@ -78,7 +78,7 @@ Contenu clair (1990 octets) : type (1) ‖ identifiant aléatoire (16) ‖ horod
 
 Types :
 - **1 — texte.**
-- **2 — alerte « bouton rouge »** (corps vide). L'expéditeur a saisi son code de destruction : sa clé privée est détruite. Le destinataire marque le contact comme « brûlé », affiche « X a utilisé le bouton rouge et ne pourra plus consulter cette conversation », et n'envoie plus rien à ce contact. L'alerte passe par le ratchet comme un message ordinaire : le relais ne la distingue pas d'un texte.
+- **2 — alerte « code de destruction »** (corps vide). L'expéditeur a saisi son code de destruction : sa clé privée est détruite. Le destinataire ferme la conversation, affiche « X a utilisé son code de destruction », et n'envoie plus rien à ce contact. L'alerte passe par le ratchet comme un message ordinaire : le relais ne la distingue pas d'un texte.
 - **3 — changement de relais** (corps vide). L'expéditeur change de relais : son identité est effacée juste après l'envoi, sans migration. Le destinataire ferme la conversation comme pour le type 2 (plus aucun envoi), affiche « X a changé de relais », et doit refaire l'appairage avec la nouvelle identité.
 
 ### Règles de robustesse
