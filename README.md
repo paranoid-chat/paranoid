@@ -69,6 +69,18 @@ Les artefacts se téléchargent depuis l'onglet *Actions* : ouvre l'exécution, 
 
 ## Installer l'APK sur le téléphone
 
+### Depuis le téléphone (release)
+
+Chaque nouvelle version (`versionName` changé sur `main`) est publiée en release GitHub, avec l'APK sous un nom fixe. Le dernier APK est toujours à cette adresse :
+
+```
+https://github.com/matteovaccari/paranoid/releases/latest/download/paranoid.apk
+```
+
+Le dépôt est privé : le navigateur du téléphone doit être connecté à un compte GitHub qui a accès au dépôt. Les notes de la release donnent le SHA-256 de l'APK et celui du certificat de signature, à comparer avec *Mes infos en direct*.
+
+### Depuis la CI (artefact)
+
 1. Télécharge `paranoid-apk` depuis la dernière exécution **Android**, puis décompresse-le. Vérifie l'empreinte : `Get-FileHash .\paranoid-*.apk -Algorithm SHA256` doit donner la valeur de `SHA256SUMS`.
 2. Copie `paranoid-<version>-<commit>.apk` sur le téléphone et ouvre-le avec *Mes fichiers*. Autorise « Installer des applis inconnues » pour *Mes fichiers*.
 3. Sur un Samsung, désactive la **Protection automatique** (*Paramètres → Sécurité et confidentialité*) le temps de l'installation.

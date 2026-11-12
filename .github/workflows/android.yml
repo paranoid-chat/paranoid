@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write # publication des releases
 
 jobs:
   apk:
@@ -67,3 +67,34 @@ jobs:
             paranoid-*.apk
             SHA256SUMS
           retention-days: 14
+
+      # Une release par version : quand versionName change sur main, l'APK est publié sous un nom fixe,
+      # pour que https://github.com/<dépôt>/releases/latest/download/paranoid.apk donne toujours le dernier.
+      - name: Release GitHub
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          if [ -z "$PARANOID_KEYSTORE" ]; then
+            echo "::warning::APK signé avec une clé de debug : pas de release."
+            exit 0
+          fi
+          if gh release view "v$v" >/dev/null 2>&1; then
+            echo "Release v$v déjà publiée : augmenter versionName pour en publier une nouvelle."
+            exit 0
+          fi
+          mkdir rel
+          cp paranoid-*.apk rel/paranoid.apk
+          (cd rel && sha256sum paranoid.apk > SHA256SUMS)
+          signer=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          cert=$("$signer" verify --print-certs rel/paranoid.apk | grep -m1 "SHA-256 digest" | sed 's/.*: //' | tr a-f A-F | sed 's/../&:/g; s/:$//')
+          {
+            echo "Paranoid $v (commit ${GITHUB_SHA::7})."
+            echo
+            echo "SHA-256 de paranoid.apk : \`$(cut -d' ' -f1 rel/SHA256SUMS)\`"
+            echo
+            echo "SHA-256 du certificat de signature : \`$cert\` (à comparer avec *Mes infos en direct*)."
+          } > rel/notes.md
+          gh release create "v$v" rel/paranoid.apk rel/SHA256SUMS --target "$GITHUB_SHA" \
+            --title "Paranoid $v" --notes-file rel/notes.md --latest
