@@ -1,4 +1,4 @@
-# Paranoid — v1.1.2
+# Paranoid — v1.2.0
 
 *The Chat app for the truly paranoids.*
 
@@ -29,7 +29,10 @@ Documents de référence : `PROTOCOL.md` (client ↔ relais, contenu du QR), `ME
   Chez le destinataire, la conversation affiche l'alerte et n'accepte plus d'envoi.
 - **Modification des codes** (menu ⋮) : le code actuel est exigé ; le code de destruction y a le même effet qu'au déverrouillage.
 - **Changer de relais** (menu ⋮) : volontairement sans migration, **tout est effacé**. Le code actuel est exigé (le code de destruction y a le même effet qu'au déverrouillage), puis le nouveau relais est testé : en cas d'échec, rien n'est touché. Chaque contact reçoit « X a changé de relais » et sa conversation se ferme. Ensuite : nouvelle identité, nouveaux codes, nouvel appairage avec chacun.
-- **Conservation de l'historique** (menu ⋮) : durée de conservation de l'historique sur un curseur (pour toujours, 1 an, 6 mois, 3 mois, 1 mois, 1 semaine, 3 jours, 24 heures). Les messages plus anciens sont effacés de ce téléphone au déverrouillage, à chaque relève et dès que le réglage change (confirmation avant d'effacer). Rien n'est effacé chez les contacts. Les alertes « code de destruction » et « changement de relais » sont toujours gardées.
+- **Paramètres** (menu ⋮) :
+  - **Conservation de l'historique** : durée de conservation sur un curseur (pour toujours, 1 an, 6 mois, 3 mois, 1 mois, 1 semaine, 3 jours, 24 heures). Les messages plus anciens sont effacés de ce téléphone au déverrouillage, à chaque relève et dès que le réglage change (confirmation avant d'effacer). Rien n'est effacé chez les contacts. Les alertes « code de destruction » et « changement de relais » sont toujours gardées.
+  - **Langue** : français ou anglais. Le choix passe par le réglage Android par appli : il apparaît aussi dans *Paramètres Android → Applis → Paranoid → Langue*. Sans choix, l'appli suit la langue du téléphone (français si le téléphone est en français, anglais sinon). Un bouton *English / Français* est aussi proposé sur l'écran de création d'identité.
+  - Tous les textes de l'appli sont traduits, y compris les fiches *Comprendre Paranoid* et les messages d'erreur. `relayd` et `relaycli` restent en français.
 - **Comprendre Paranoid** (menu ⋮) : fiches hors ligne avec schémas, à deux niveaux (simple, puis technique), sur l'identité, l'appairage, le relais, le chiffrement, les codes, le stockage, les notifications, le changement de relais, les limites, la vérification et un glossaire.
 - **Mes infos en direct** (menu ⋮, en dernier) : affiche l'empreinte de sécurité, le relais et l'empreinte de son certificat, la protection de la clé (StrongBox, TEE ou logiciel) et l'empreinte du certificat de signature de l'APK.
 - **Clavier sans apprentissage** : chaque champ de saisie demande au clavier de ne rien apprendre ni mémoriser (`IME_FLAG_NO_PERSONALIZED_LEARNING`, mode incognito sur Gboard).
@@ -160,9 +163,10 @@ Tape un message puis Entrée. Les messages du téléphone s'affichent au fil de 
 | 15 | *Changer de relais* valide (par exemple du LAN vers l'adresse publique) | PC : « tel a changé de relais », envoi refusé. Téléphone : choix des codes, puis liste vide |
 | 16 | *Changer de relais* avec le code de destruction | Bouton rouge |
 | 17 | *Mes infos en direct* | Empreinte et relais identiques à l'écran principal ; signature identique à `apksigner verify --print-certs` |
-| 18 | *Conservation de l'historique* : curseur sur « 24 heures » avec des messages plus anciens | Confirmation « Effacer N message(s) ? », puis messages effacés ; les cartes d'alerte restent |
+| 18 | *Paramètres* : curseur sur « 24 heures » avec des messages plus anciens | Confirmation « Effacer N message(s) ? », puis messages effacés ; les cartes d'alerte restent |
 | 19 | Curseur sur « 24 heures », puis appli fermée plus de 24 h | Au déverrouillage, les messages de plus de 24 h ont disparu |
 | 20 | Relais lancé avec `--max-db 12K` (test seulement), puis plusieurs envois | « le relais est plein » après quelques messages (mesure toutes les 10 s) |
+| 21 | *Paramètres → Langue → English* | L'appli se rouvre en anglais, sans reverrouillage ; le choix reste après redémarrage et apparaît dans les réglages Android de l'appli |
 
 Après les scénarios 11, 15 et 16 : `& $C -d pc remove tel`, supprimer le contact sur le téléphone, puis refaire l'appairage. Après le 13, le dossier `pc` est effacé : refais aussi l'`init`.
 
