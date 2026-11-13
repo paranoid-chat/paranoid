@@ -20,28 +20,28 @@ class Invite(val ik: ByteArray, val xk: ByteArray, val relays: List<InviteRelay>
             val raw = try {
                 unb64(s.trim())
             } catch (e: IllegalArgumentException) {
-                throw InviteException("invitation illisible (base64url attendu)")
+                throw InviteException(tr("invitation illisible (base64url attendu)", "unreadable invitation (base64url expected)"))
             }
             val obj = try {
                 MiniJson.parse(raw.toString(Charsets.UTF_8)) as? Map<*, *>
             } catch (e: Exception) {
                 null
-            } ?: throw InviteException("invitation illisible (JSON)")
+            } ?: throw InviteException(tr("invitation illisible (JSON)", "unreadable invitation (JSON)"))
             val v = (obj["v"] as? Number)?.toInt()
-            if (v != 2) throw InviteException("version d'invitation $v non prise en charge  : mettre l'appli à jour des deux côtés")
+            if (v != 2) throw InviteException(tr("version d'invitation $v non prise en charge : mettre l'appli à jour des deux côtés", "unsupported invitation version $v: update the app on both sides"))
             val ik = obj.bytes("ik")
             val xk = obj.bytes("xk")
             val secret = obj.bytes("s")
-            if (ik?.size != 32 || xk?.size != 32 || secret?.size != PAIR_SECRET_LEN) throw InviteException("invitation : clés invalides")
+            if (ik?.size != 32 || xk?.size != 32 || secret?.size != PAIR_SECRET_LEN) throw InviteException(tr("invitation : clés invalides", "invitation: invalid keys"))
             val list = obj["r"] as? List<*> ?: emptyList<Any>()
-            if (list.isEmpty() || list.size > 3) throw InviteException("invitation : 1 à 3 relais attendus")
+            if (list.isEmpty() || list.size > 3) throw InviteException(tr("invitation : 1 à 3 relais attendus", "invitation: 1 to 3 relays expected"))
             val relays = list.map { e ->
-                val m = e as? Map<*, *> ?: throw InviteException("invitation : relais invalide")
+                val m = e as? Map<*, *> ?: throw InviteException(tr("invitation : relais invalide", "invitation: invalid relay"))
                 val u = m["u"] as? String
                 val fp = m.bytes("fp")
                 val w = m.bytes("w")
                 if (u == null || !u.startsWith("https://") || fp?.size != 32 || w?.size != 16) {
-                    throw InviteException("invitation : relais invalide")
+                    throw InviteException(tr("invitation : relais invalide", "invitation: invalid relay"))
                 }
                 InviteRelay(u, fp, w)
             }

@@ -29,7 +29,7 @@ class Messenger(
 
     private fun checkName(name: String): String {
         val n = name.trim()
-        require(n.isNotEmpty() && n.length <= 32) { "nom de contact invalide (1 à 32 caractères)" }
+        require(n.isNotEmpty() && n.length <= 32) { tr("nom de contact invalide (1 à 32 caractères)", "invalid contact name (1 to 32 characters)") }
         return n
     }
 
@@ -47,7 +47,7 @@ class Messenger(
     fun invite(name: String): String {
         val n = checkName(name)
         val c = state.contacts[n] ?: Contact(n)
-        if (c.ik != null) throw InviteException("$n est déjà appairé : supprimer le contact pour recommencer")
+        if (c.ik != null) throw InviteException(tr("$n est déjà appairé : supprimer le contact pour recommencer", "$n is already paired: delete the contact to start over"))
         val box = c.myBox ?: newBox(state.relay).also { c.myBox = it }
         val secret = c.pairSecret ?: randomBytes(PAIR_SECRET_LEN).also { c.pairSecret = it }
         state.contacts[n] = c
@@ -63,10 +63,10 @@ class Messenger(
     fun join(name: String, invite: String): Contact {
         val n = checkName(name)
         val inv = Invite.decode(invite)
-        if (inv.ik.contentEquals(state.ik)) throw InviteException("c'est votre propre invitation")
-        if (state.contacts.containsKey(n)) throw InviteException("le contact $n existe déjà : le supprimer ou choisir un autre nom")
+        if (inv.ik.contentEquals(state.ik)) throw InviteException(tr("c'est votre propre invitation", "this is your own invitation"))
+        if (state.contacts.containsKey(n)) throw InviteException(tr("le contact $n existe déjà : le supprimer ou choisir un autre nom", "contact $n already exists: delete it or choose another name"))
         state.contacts.values.firstOrNull { it.ik?.contentEquals(inv.ik) == true }?.let {
-            throw InviteException("cette identité est déjà enregistrée sous le nom ${it.name}")
+            throw InviteException(tr("cette identité est déjà enregistrée sous le nom ${it.name}", "this identity is already saved as ${it.name}"))
         }
         val r = inv.relays.first()
         val their = TheirBox(RelayRef(r.url, r.fp), r.writeId)
@@ -103,10 +103,10 @@ class Messenger(
     fun send(name: String, text: String): ChatMessage {
         val c = contact(name)
         val their = c.their
-        if (c.burned) throw IllegalStateException("$name a effacé son identité : impossible de lui écrire")
-        if (!c.ready || their == null) throw IllegalStateException("$name n'a pas encore scanné votre QR")
+        if (c.burned) throw IllegalStateException(tr("$name a effacé son identité : impossible de lui écrire", "$name erased their identity: they can no longer be reached"))
+        if (!c.ready || their == null) throw IllegalStateException(tr("$name n'a pas encore scanné votre QR", "$name has not scanned your QR yet"))
         val body = text.toByteArray(Charsets.UTF_8)
-        require(body.size <= MAX_TEXT) { "message trop long (${body.size} octets, max $MAX_TEXT)" }
+        require(body.size <= MAX_TEXT) { tr("message trop long (${body.size} octets, max $MAX_TEXT)", "message too long (${body.size} bytes, max $MAX_TEXT)") }
         val id = randomBytes(16)
         val ts = System.currentTimeMillis() / 1000
         val e = env(c)

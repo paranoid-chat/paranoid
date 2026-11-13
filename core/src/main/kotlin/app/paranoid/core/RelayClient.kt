@@ -16,8 +16,8 @@ import javax.net.ssl.X509TrustManager
 class RelayRef(val url: String, val fp: ByteArray)
 
 open class RelayException(msg: String, val status: Int = 0) : Exception(msg)
-class QuotaFullException : RelayException("la boîte du destinataire est pleine : réessayer plus tard", 507)
-class RelayFullException : RelayException("le relais est plein : réessayer plus tard, ou prévenir son administrateur", 507)
+class QuotaFullException : RelayException(tr("la boîte du destinataire est pleine : réessayer plus tard", "the recipient's box is full: try again later"), 507)
+class RelayFullException : RelayException(tr("le relais est plein : réessayer plus tard, ou prévenir son administrateur", "the relay is full: try again later, or contact its administrator"), 507)
 class PinningException(msg: String) : CertificateException(msg)
 
 class Record(val seq: Long, val ts: Long, val blob: ByteArray)
@@ -28,10 +28,10 @@ class RelayClient(private val ref: RelayRef, private val timeoutMs: Int = 20_000
 
     private class PinningTrustManager(private val fp: ByteArray) : X509TrustManager {
         override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {
-            val leaf = chain?.firstOrNull() ?: throw PinningException("aucun certificat présenté par le relais")
+            val leaf = chain?.firstOrNull() ?: throw PinningException(tr("aucun certificat présenté par le relais", "no certificate presented by the relay"))
             val got = sha256(leaf.encoded)
             if (!constantTimeEquals(got, fp)) {
-                throw PinningException("empreinte du relais inattendue : ${formatFingerprint(got)}")
+                throw PinningException(tr("empreinte du relais inattendue : ${formatFingerprint(got)}", "unexpected relay fingerprint: ${formatFingerprint(got)}"))
             }
         }
 
@@ -90,15 +90,15 @@ class RelayClient(private val ref: RelayRef, private val timeoutMs: Int = 20_000
             val n = input.read(buf)
             if (n < 0) break
             out.write(buf, 0, n)
-            if (out.size() > max) throw RelayException("réponse du relais trop grande")
+            if (out.size() > max) throw RelayException(tr("réponse du relais trop grande", "relay response too large"))
         }
         return out.toByteArray()
     }
 
     private fun fail(r: Response): Nothing {
         if (r.full) throw RelayFullException()
-        if (r.code == 429) throw RelayException("relais : trop de requêtes, nouvel essai possible dans ${r.retryAfter} s", 429)
-        throw RelayException("relais : ${r.code} (${r.body.toString(Charsets.UTF_8).trim()})", r.code)
+        if (r.code == 429) throw RelayException(tr("relais : trop de requêtes, nouvel essai possible dans ${r.retryAfter} s", "relay: too many requests, retry in ${r.retryAfter} s"), 429)
+        throw RelayException(tr("relais : ${r.code} (${r.body.toString(Charsets.UTF_8).trim()})", "relay: ${r.code} (${r.body.toString(Charsets.UTF_8).trim()})"), r.code)
     }
 
     /** Vérifie que le relais répond et que l'empreinte correspond (une boîte inconnue renvoie 404). */

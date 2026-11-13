@@ -28,10 +28,10 @@ private const val INFO_BOOT = "relay-dr-v1/boot"
 private const val INFO_MSG = "relay-dr-v1/msg"
 private const val AD_CONTEXT = "relay-dr-v1/ad"
 
-class DecryptException(msg: String = "message illisible (clé incorrecte ou bloc altéré)") : CryptoException(msg)
-class ReplayException : CryptoException("message déjà lu, trop ancien ou non authentique")
-class SkipException : CryptoException("trop de messages manquants")
-class VersionException : CryptoException("version de message non prise en charge")
+class DecryptException(msg: String = tr("message illisible (clé incorrecte ou bloc altéré)", "unreadable message (wrong key or altered block)")) : CryptoException(msg)
+class ReplayException : CryptoException(tr("message déjà lu, trop ancien ou non authentique", "message already read, too old or not authentic"))
+class SkipException : CryptoException(tr("trop de messages manquants", "too many missing messages"))
+class VersionException : CryptoException(tr("version de message non prise en charge", "unsupported message version"))
 
 class ChainState(var dh: ByteArray, var ck: ByteArray, var n: Long) {
     fun copy() = ChainState(dh.copyOf(), ck.copyOf(), n)
@@ -267,7 +267,7 @@ private fun msgKeys(mk: ByteArray): Pair<ByteArray, ByteArray> {
 class Plain(val type: Byte, val id: ByteArray, val ts: Long, val body: ByteArray)
 
 fun encodeInner(p: Plain): ByteArray {
-    require(p.body.size <= MAX_TEXT) { "message trop long" }
+    require(p.body.size <= MAX_TEXT) { tr("message trop long", "message too long") }
     require(p.id.size == 16)
     val inner = ByteArray(DR_INNER_LEN)
     inner[0] = p.type

@@ -16,6 +16,7 @@ import app.paranoid.core.b64
 import app.paranoid.core.randomBytes
 import app.paranoid.core.parseFingerprint
 import app.paranoid.core.safetyNumber
+import app.paranoid.core.tr
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -185,17 +186,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun setup(url: String, fp: String) = action {
         duressJob?.join() // un effacement en cours doit être terminé avant toute nouvelle identité
         val relay = RelayRef(url.trim().trimEnd('/'), parseFingerprint(fp))
-        require(relay.url.startsWith("https://")) { "l'adresse du relais doit commencer par https://" }
+        require(relay.url.startsWith("https://")) { tr("l'adresse du relais doit commencer par https://", "the relay address must start with https://") }
         pending = Messenger.createIdentity(relay)
         store.beginNew()
         _ui.update { it.copy(screen = Screen.SetCodes(migrating = false)) }
     }
 
     fun setCodes(unlock: String, unlockAgain: String, duress: String, duressAgain: String) = action {
-        require(unlock == unlockAgain) { "les deux saisies du code de déverrouillage diffèrent" }
-        require(duress == duressAgain) { "les deux saisies du code de destruction diffèrent" }
+        require(unlock == unlockAgain) { tr("les deux saisies du code de déverrouillage diffèrent", "the two entries of the unlock code differ") }
+        require(duress == duressAgain) { tr("les deux saisies du code de destruction diffèrent", "the two entries of the destruction code differ") }
         LockBox.validateCodes(unlock, duress)
-        val s = pending ?: error("aucune identité en attente")
+        val s = pending ?: error(tr("aucune identité en attente", "no pending identity"))
         store.setCodes(s, unlock, duress)
         pending = null
         messenger = Messenger(s, ::persist)
@@ -210,8 +211,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             StateStore.UnlockResult.Duress -> redButton(code)
             is StateStore.UnlockResult.Wrong ->
-                error(if (r.waitSeconds > 0) "Code incorrect. Prochain essai dans ${r.waitSeconds} s." else "Code incorrect.")
-            is StateStore.UnlockResult.Throttled -> error("Trop d'essais. Nouvel essai possible dans ${r.waitSeconds} s.")
+                error(if (r.waitSeconds > 0) tr("Code incorrect. Prochain essai dans ${r.waitSeconds} s.", "Wrong code. Next attempt in ${r.waitSeconds} s.") else tr("Code incorrect.", "Wrong code."))
+            is StateStore.UnlockResult.Throttled -> error(tr("Trop d'essais. Nouvel essai possible dans ${r.waitSeconds} s.", "Too many attempts. Try again in ${r.waitSeconds} s."))
         }
     }
 
@@ -249,18 +250,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Change les deux codes ; le code actuel est exigé. Le code de destruction y déclenche aussi le bouton rouge. */
     fun changeCodes(current: String, unlock: String, unlockAgain: String, duress: String, duressAgain: String) = action {
-        require(unlock == unlockAgain) { "les deux saisies du nouveau code de déverrouillage diffèrent" }
-        require(duress == duressAgain) { "les deux saisies du nouveau code de destruction diffèrent" }
+        require(unlock == unlockAgain) { tr("les deux saisies du nouveau code de déverrouillage diffèrent", "the two entries of the new unlock code differ") }
+        require(duress == duressAgain) { tr("les deux saisies du nouveau code de destruction diffèrent", "the two entries of the new destruction code differ") }
         LockBox.validateCodes(unlock, duress)
         when (val r = store.changeCodes(current, unlock, duress)) {
             StateStore.UnlockResult.Unlocked -> {
-                _ui.update { it.copy(info = "Codes modifiés.") }
+                _ui.update { it.copy(info = tr("Codes modifiés.", "Codes changed.")) }
                 refresh(Screen.Contacts)
             }
             StateStore.UnlockResult.Duress -> redButton(current)
             is StateStore.UnlockResult.Wrong ->
-                error(if (r.waitSeconds > 0) "Code actuel incorrect. Prochain essai dans ${r.waitSeconds} s." else "Code actuel incorrect.")
-            is StateStore.UnlockResult.Throttled -> error("Trop d'essais. Nouvel essai possible dans ${r.waitSeconds} s.")
+                error(if (r.waitSeconds > 0) tr("Code actuel incorrect. Prochain essai dans ${r.waitSeconds} s.", "Wrong current code. Next attempt in ${r.waitSeconds} s.") else tr("Code actuel incorrect.", "Wrong current code."))
+            is StateStore.UnlockResult.Throttled -> error(tr("Trop d'essais. Nouvel essai possible dans ${r.waitSeconds} s.", "Too many attempts. Try again in ${r.waitSeconds} s."))
         }
     }
 
@@ -275,13 +276,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun setHistory(seconds: Long) = action {
         val m = messenger ?: return@action
         val n = m.setHistory(seconds)
-        _ui.update { it.copy(info = if (n > 0) "$n message(s) effacé(s) de ce téléphone." else null) }
+        _ui.update { it.copy(info = if (n > 0) tr("$n message(s) effacé(s) de ce téléphone.", "$n message(s) erased from this phone.") else null) }
         refresh()
     }
 
     fun goChangeRelay() = _ui.update { it.copy(screen = Screen.ChangeRelay, error = null, info = null) }
 
-    fun keyProtection(): String = runCatching { store.keyProtection() }.getOrDefault("Inconnue")
+    fun keyProtection(): String = runCatching { store.keyProtection() }.getOrDefault(tr("Inconnue", "Unknown"))
 
     fun goLearn() = _ui.update { it.copy(screen = Screen.Learn, error = null, info = null) }
 
@@ -295,16 +296,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun changeRelay(current: String, url: String, fp: String) = action {
         val relay = RelayRef(url.trim().trimEnd('/'), parseFingerprint(fp))
-        require(relay.url.startsWith("https://")) { "l'adresse du relais doit commencer par https://" }
+        require(relay.url.startsWith("https://")) { tr("l'adresse du relais doit commencer par https://", "the relay address must start with https://") }
         when (val r = store.unlock(current)) {
             StateStore.UnlockResult.Unlocked -> Unit
             StateStore.UnlockResult.Duress -> return@action redButton(current)
             is StateStore.UnlockResult.Wrong ->
-                error(if (r.waitSeconds > 0) "Code actuel incorrect. Prochain essai dans ${r.waitSeconds} s." else "Code actuel incorrect.")
-            is StateStore.UnlockResult.Throttled -> error("Trop d'essais. Nouvel essai possible dans ${r.waitSeconds} s.")
+                error(if (r.waitSeconds > 0) tr("Code actuel incorrect. Prochain essai dans ${r.waitSeconds} s.", "Wrong current code. Next attempt in ${r.waitSeconds} s.") else tr("Code actuel incorrect.", "Wrong current code."))
+            is StateStore.UnlockResult.Throttled -> error(tr("Trop d'essais. Nouvel essai possible dans ${r.waitSeconds} s.", "Too many attempts. Try again in ${r.waitSeconds} s."))
         }
         val fresh = Messenger.createIdentity(relay) // échoue si le relais est injoignable ou l'empreinte fausse
-        val m = messenger ?: error("appli verrouillée")
+        val m = messenger ?: error(tr("appli verrouillée", "app locked"))
         synchronized(m) {
             runCatching { m.sendAlerts(5_000, TYPE_RELAY_CHANGE) }
             messenger = null
@@ -314,7 +315,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         pending = fresh
         store.beginNew()
-        _ui.value = Ui(screen = Screen.SetCodes(migrating = false), info = "Relais changé. Choisir les codes de la nouvelle identité.")
+        _ui.value = Ui(screen = Screen.SetCodes(migrating = false), info = tr("Relais changé. Choisir les codes de la nouvelle identité.", "Relay changed. Choose the codes of the new identity."))
     }
 
     /** Verrouille : la clé de données et l'état déchiffré sont oubliés. */
@@ -360,7 +361,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _ui.update {
             it.copy(
                 add = AddFlow(),
-                info = "Appairage envoyé à ${c.name}.\n\nSon empreinte : $sn\n\nComparez-la de vive voix avec celle que ${c.name} voit comme « Mon empreinte ».",
+                info = tr("Appairage envoyé à ${c.name}.\n\nSon empreinte : $sn\n\nComparez-la de vive voix avec celle que ${c.name} voit comme « Mon empreinte ».", "Pairing sent to ${c.name}.\n\nTheir fingerprint: $sn\n\nCompare it out loud with what ${c.name} sees as “My fingerprint”."),
             )
         }
         refresh(Screen.Chat(c.name))
@@ -373,7 +374,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 // Chaque enregistrement rafraîchit l'écran : le message apparaît « envoi… », puis « envoyé ».
                 messenger?.send(name, text)
             } catch (e: Exception) {
-                _ui.update { it.copy(error = "Échec de l'envoi : ${e.message}") }
+                _ui.update { it.copy(error = tr("Échec de l'envoi : ${e.message}", "Sending failed: ${e.message}")) }
             }
             refresh()
         }
@@ -381,7 +382,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun resetSession(name: String) = action {
         messenger?.resetSession(name)
-        _ui.update { it.copy(info = "Session réinitialisée. $name doit faire de même de son côté.") }
+        _ui.update { it.copy(info = tr("Session réinitialisée. $name doit faire de même de son côté.", "Session reset. $name must do the same on their side.")) }
         refresh()
     }
 

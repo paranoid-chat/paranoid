@@ -80,9 +80,9 @@ object X25519 {
 
     /** Échange X25519. Lève une exception si le résultat est nul (point de petit ordre), comme Go. */
     fun agree(priv: ByteArray, pub: ByteArray): ByteArray {
-        require(priv.size == 32 && pub.size == 32) { "clé X25519 invalide" }
+        require(priv.size == 32 && pub.size == 32) { tr("clé X25519 invalide", "invalid X25519 key") }
         val out = ByteArray(32)
-        if (!BcX25519.calculateAgreement(priv, 0, pub, 0, out, 0)) throw CryptoException("échange X25519 invalide")
+        if (!BcX25519.calculateAgreement(priv, 0, pub, 0, out, 0)) throw CryptoException(tr("échange X25519 invalide", "invalid X25519 exchange"))
         return out
     }
 }
@@ -127,7 +127,7 @@ fun safetyNumber(ik: ByteArray): String =
 fun parseFingerprint(s: String): ByteArray {
     val clean = s.trim().replace(":", "").replace(" ", "")
     require(clean.length == 64 && clean.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' }) {
-        "empreinte invalide : 32 octets attendus (format FB:2B:… ou hexadécimal)"
+        tr("empreinte invalide : 32 octets attendus (format FB:2B:… ou hexadécimal)", "invalid fingerprint: 32 bytes expected (FB:2B:… or hexadecimal)")
     }
     return ByteArray(32) { clean.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
 }

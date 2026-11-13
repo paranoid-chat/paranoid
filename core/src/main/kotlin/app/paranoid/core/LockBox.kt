@@ -36,9 +36,9 @@ object LockBox {
     private val AAD = "paranoid/lockbox/v1".toByteArray()
 
     fun validateCodes(unlock: String, duress: String) {
-        require(unlock.length >= MIN_CODE_LENGTH) { "le code de déverrouillage doit faire au moins $MIN_CODE_LENGTH caractères" }
-        require(duress.length >= MIN_CODE_LENGTH) { "le code de destruction doit faire au moins $MIN_CODE_LENGTH caractères" }
-        require(unlock != duress) { "les deux codes doivent être différents" }
+        require(unlock.length >= MIN_CODE_LENGTH) { tr("le code de déverrouillage doit faire au moins $MIN_CODE_LENGTH caractères", "the unlock code must be at least $MIN_CODE_LENGTH characters long") }
+        require(duress.length >= MIN_CODE_LENGTH) { tr("le code de destruction doit faire au moins $MIN_CODE_LENGTH caractères", "the destruction code must be at least $MIN_CODE_LENGTH characters long") }
+        require(unlock != duress) { tr("les deux codes doivent être différents", "the two codes must be different") }
     }
 
     fun create(dataKey: ByteArray, unlock: String, duress: String, params: Params = Params()): ByteArray {

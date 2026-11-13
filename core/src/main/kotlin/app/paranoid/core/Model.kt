@@ -74,9 +74,9 @@ internal object StateCodec {
 
     fun decode(data: ByteArray): AppState {
         DataInputStream(ByteArrayInputStream(data)).use { i ->
-            require(i.readInt() == MAGIC) { "état illisible" }
+            require(i.readInt() == MAGIC) { tr("état illisible", "unreadable state") }
             val version = i.readInt()
-            require(version in 1..VERSION) { "version d'état inconnue" }
+            require(version in 1..VERSION) { tr("version d'état inconnue", "unknown state version") }
             val s = AppState(i.bytes(), i.bytes(), i.relay())
             repeat(i.readInt()) { val c = i.contact(version); s.contacts[c.name] = c }
             if (version >= 6) s.historySeconds = i.readLong().coerceAtLeast(0)

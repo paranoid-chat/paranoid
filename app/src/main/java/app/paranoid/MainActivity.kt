@@ -1,6 +1,7 @@
 package app.paranoid
 
 import android.os.Bundle
+import app.paranoid.core.Lang
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -35,6 +36,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Langue de l'interface : celle choisie pour l'appli (réglage Android par appli), sinon celle du
+        // téléphone ; le français si c'est du français, l'anglais pour toute autre langue. Un changement de
+        // langue recrée l'activité, qui repasse ici.
+        Lang.english = resources.configuration.locales[0].language != "fr"
         // Pas de capture d'écran, pas d'aperçu dans les applis récentes.
         window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         enableEdgeToEdge()

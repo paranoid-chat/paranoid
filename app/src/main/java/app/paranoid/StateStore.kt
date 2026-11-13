@@ -11,6 +11,7 @@ import app.paranoid.core.AppState
 import app.paranoid.core.LockBox
 import app.paranoid.core.LockThrottle
 import app.paranoid.core.randomBytes
+import app.paranoid.core.tr
 import java.io.File
 import java.security.KeyStore
 import javax.crypto.Cipher
@@ -76,14 +77,14 @@ class StateStore(context: Context) {
         dek = c.doFinal(raw.copyOfRange(12, raw.size))
         val data = legacyState.readFully()
         val plain = Aead.open(dek!!, data.copyOfRange(0, 12), data.copyOfRange(12, data.size), AAD_STATE)
-            ?: error("ancien état illisible")
+            ?: error(tr("ancien état illisible", "unreadable old state"))
         return AppState.decode(plain)
     }
 
     /** Enregistre l'état et protège la clé de données par les deux codes. */
     @Synchronized
     fun setCodes(state: AppState, unlockCode: String, duressCode: String) {
-        val key = dek ?: error("aucune clé de données en mémoire")
+        val key = dek ?: error(tr("aucune clé de données en mémoire", "no data key in memory"))
         val box = LockBox.create(key, unlockCode, duressCode)
         save(state)
         writeBox(box)
@@ -130,16 +131,16 @@ class StateStore(context: Context) {
 
     @Synchronized
     fun load(): AppState {
-        val key = dek ?: error("coffre verrouillé")
+        val key = dek ?: error(tr("coffre verrouillé", "vault locked"))
         val raw = stateFile.readFully()
         val plain = Aead.open(key, raw.copyOfRange(0, 12), raw.copyOfRange(12, raw.size), AAD_STATE)
-            ?: error("état illisible (clé incorrecte ou fichier altéré)")
+            ?: error(tr("état illisible (clé incorrecte ou fichier altéré)", "unreadable state (wrong key or altered file)"))
         return AppState.decode(plain)
     }
 
     @Synchronized
     fun save(state: AppState) {
-        val key = dek ?: error("coffre verrouillé")
+        val key = dek ?: error(tr("coffre verrouillé", "vault locked"))
         val nonce = randomBytes(12)
         write(stateFile, nonce + Aead.seal(key, nonce, state.encode(), AAD_STATE))
     }
@@ -165,10 +166,10 @@ class StateStore(context: Context) {
         val key = keyStore().getKey(ALIAS, null) as? SecretKey ?: return "clé absente"
         val info = SecretKeyFactory.getInstance(key.algorithm, "AndroidKeyStore").getKeySpec(key, KeyInfo::class.java) as KeyInfo
         return when (info.securityLevel) {
-            KeyProperties.SECURITY_LEVEL_STRONGBOX -> "StrongBox (puce de sécurité dédiée)"
-            KeyProperties.SECURITY_LEVEL_TRUSTED_ENVIRONMENT -> "TEE (zone sécurisée du processeur)"
-            KeyProperties.SECURITY_LEVEL_SOFTWARE -> "Logiciel (pas de matériel sécurisé)"
-            else -> "Inconnue"
+            KeyProperties.SECURITY_LEVEL_STRONGBOX -> tr("StrongBox (puce de sécurité dédiée)", "StrongBox (dedicated security chip)")
+            KeyProperties.SECURITY_LEVEL_TRUSTED_ENVIRONMENT -> tr("TEE (zone sécurisée du processeur)", "TEE (processor secure area)")
+            KeyProperties.SECURITY_LEVEL_SOFTWARE -> tr("Logiciel (pas de matériel sécurisé)", "Software (no secure hardware)")
+            else -> tr("Inconnue", "Unknown")
         }
     }
 
@@ -211,7 +212,7 @@ class StateStore(context: Context) {
 
     private fun keystoreKey(create: Boolean): SecretKey {
         (keyStore().getKey(ALIAS, null) as? SecretKey)?.let { return it }
-        check(create) { "clé de l'appareil absente : données illisibles" }
+        check(create) { tr("clé de l'appareil absente : données illisibles", "device key missing: unreadable data") }
         return try {
             generate(strongBox = true)
         } catch (e: StrongBoxUnavailableException) {

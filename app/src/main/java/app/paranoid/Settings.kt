@@ -12,7 +12,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import android.app.LocaleManager
+import android.content.Context
+import android.os.LocaleList
+import androidx.compose.foundation.clickable
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -29,24 +35,50 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import app.paranoid.core.Lang
+import app.paranoid.core.tr
 import androidx.compose.ui.unit.dp
 
 private const val DAY = 86_400L
 
 /** Crans du curseur, du plus permissif au plus strict. 0 = pour toujours. */
-private val HISTORY_STEPS = listOf(
-    0L to "Pour toujours",
-    365 * DAY to "1 an",
-    180 * DAY to "6 mois",
-    90 * DAY to "3 mois",
-    30 * DAY to "1 mois",
-    7 * DAY to "1 semaine",
-    3 * DAY to "3 jours",
-    DAY to "24 heures",
-)
+private val HISTORY_SECONDS = listOf(0L, 365 * DAY, 180 * DAY, 90 * DAY, 30 * DAY, 7 * DAY, 3 * DAY, DAY)
 
-private fun stepOf(seconds: Long): Int = HISTORY_STEPS.indexOfFirst { it.first == seconds }.coerceAtLeast(0)
+private fun historyLabel(i: Int): String = when (i) {
+    0 -> tr("Pour toujours", "Forever")
+    1 -> tr("1 an", "1 year")
+    2 -> tr("6 mois", "6 months")
+    3 -> tr("3 mois", "3 months")
+    4 -> tr("1 mois", "1 month")
+    5 -> tr("1 semaine", "1 week")
+    6 -> tr("3 jours", "3 days")
+    else -> tr("24 heures", "24 hours")
+}
+
+private fun stepOf(seconds: Long): Int = HISTORY_SECONDS.indexOf(seconds).coerceAtLeast(0)
+
+/**
+ * Langue de l'appli, par le réglage Android par appli (Android 13+) : l'activité est recréée dans
+ * la nouvelle langue, et le choix apparaît aussi dans Paramètres Android → Applis → Paranoid → Langue.
+ */
+fun setAppLanguage(ctx: Context, english: Boolean) {
+    ctx.getSystemService(LocaleManager::class.java).applicationLocales = LocaleList.forLanguageTags(if (english) "en" else "fr")
+}
+
+@Composable
+private fun LanguageChoice(label: String, english: Boolean) {
+    val ctx = LocalContext.current
+    Row(
+        Modifier.fillMaxWidth().clickable { if (Lang.english != english) setAppLanguage(ctx, english) },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = Lang.english == english, onClick = { if (Lang.english != english) setAppLanguage(ctx, english) })
+        Text(label, style = MaterialTheme.typography.bodyLarge)
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,8 +91,8 @@ fun SettingsScreen(ui: Ui, vm: MainViewModel) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Conservation de l'historique") },
-                navigationIcon = { IconButton(onClick = { vm.goContacts() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Retour") } },
+                title = { Text(tr("Paramètres", "Settings")) },
+                navigationIcon = { IconButton(onClick = { vm.goContacts() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, tr("Retour", "Back")) } },
             )
         },
     ) { pad ->
@@ -69,48 +101,63 @@ fun SettingsScreen(ui: Ui, vm: MainViewModel) {
                 .windowInsetsPadding(WindowInsets.navigationBars).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("Historique des messages", style = MaterialTheme.typography.titleMedium)
+            Text(tr("Conservation de l'historique", "History retention"), style = MaterialTheme.typography.titleMedium)
             Row(Modifier.fillMaxWidth()) {
-                Text("Garder : ", style = MaterialTheme.typography.bodyLarge)
-                Text(HISTORY_STEPS[index].second, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.primary)
+                Text(tr("Garder : ", "Keep: "), style = MaterialTheme.typography.bodyLarge)
+                Text(historyLabel(index), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.primary)
             }
             Slider(
                 value = pos,
                 onValueChange = { pos = it },
                 onValueChangeFinished = {
                     val i = pos.toInt()
-                    val seconds = HISTORY_STEPS[i].first
+                    val seconds = HISTORY_SECONDS[i]
                     if (seconds == ui.historySeconds) return@Slider
                     val n = vm.countOlderThan(seconds)
                     if (n > 0) confirm = i to n else vm.setHistory(seconds)
                 },
-                valueRange = 0f..(HISTORY_STEPS.size - 1).toFloat(),
-                steps = HISTORY_STEPS.size - 2,
+                valueRange = 0f..(HISTORY_SECONDS.size - 1).toFloat(),
+                steps = HISTORY_SECONDS.size - 2,
                 enabled = !ui.busy,
             )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Pour toujours", style = MaterialTheme.typography.labelSmall)
-                Text("24 heures", style = MaterialTheme.typography.labelSmall)
+                Text(historyLabel(0), style = MaterialTheme.typography.labelSmall)
+                Text(historyLabel(HISTORY_SECONDS.size - 1), style = MaterialTheme.typography.labelSmall)
             }
             Text(
-                "Les messages plus anciens que cette durée sont effacés de ce téléphone : au déverrouillage, " +
-                    "à chaque relève et dès que ce réglage change. Rien n'est effacé chez les contacts.",
+                tr(
+                    "Les messages plus anciens que cette durée sont effacés de ce téléphone : au déverrouillage, " +
+                        "à chaque relève et dès que ce réglage change. Rien n'est effacé chez les contacts.",
+                    "Messages older than this are erased from this phone: when unlocking, at every check " +
+                        "and as soon as this setting changes. Nothing is erased on the contacts' side.",
+                ),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            HorizontalDivider()
+            Text(tr("Langue", "Language"), style = MaterialTheme.typography.titleMedium)
+            LanguageChoice("Français", english = false)
+            LanguageChoice("English", english = true)
         }
     }
 
     confirm?.let { (i, n) ->
         AlertDialog(
             onDismissRequest = { confirm = null; pos = stepOf(ui.historySeconds).toFloat() },
-            title = { Text("Effacer $n message(s) ?") },
-            text = { Text("Les messages de plus de ${HISTORY_STEPS[i].second} seront effacés de ce téléphone tout de suite, sans retour possible.") },
+            title = { Text(tr("Effacer $n message(s) ?", "Erase $n message(s)?")) },
+            text = {
+                Text(
+                    tr(
+                        "Les messages de plus de ${historyLabel(i)} seront effacés de ce téléphone tout de suite, sans retour possible.",
+                        "Messages older than ${historyLabel(i)} will be erased from this phone right away, with no way back.",
+                    ),
+                )
+            },
             confirmButton = {
-                TextButton(onClick = { confirm = null; vm.setHistory(HISTORY_STEPS[i].first) }) { Text("Effacer") }
+                TextButton(onClick = { confirm = null; vm.setHistory(HISTORY_SECONDS[i]) }) { Text(tr("Effacer", "Erase")) }
             },
             dismissButton = {
-                TextButton(onClick = { confirm = null; pos = stepOf(ui.historySeconds).toFloat() }) { Text("Annuler") }
+                TextButton(onClick = { confirm = null; pos = stepOf(ui.historySeconds).toFloat() }) { Text(tr("Annuler", "Cancel")) }
             },
         )
     }
