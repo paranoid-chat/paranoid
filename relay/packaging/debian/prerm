@@ -1,6 +1,9 @@
 #!/bin/sh
 set -e
 if [ "$1" = remove ] && [ -d /run/systemd/system ]; then
-	systemctl disable --now paranoid-relay.service paranoid-relay-firewall.service >/dev/null 2>&1 || true
+	if grep -qx 'ANNOUNCE=yes' /etc/paranoid-relay/relay.conf 2>/dev/null; then
+		runuser -u paranoid-relay -- /usr/sbin/paranoid-relay announce remove >/dev/null 2>&1 || true
+	fi
+	systemctl disable --now paranoid-relay-announce.timer paranoid-relay.service paranoid-relay-firewall.service >/dev/null 2>&1 || true
 fi
 exit 0

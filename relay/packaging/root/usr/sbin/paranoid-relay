@@ -6,6 +6,7 @@
 #   apply    régénère le pare-feu et redémarre le relais d'après relay.conf
 #   import   reprend le certificat, la clé et la base d'un relais existant
 #   newcert  génère un nouveau certificat (tous les utilisateurs devront changer l'empreinte)
+#   announce signal signé vers l'annuaire public getparanoid.fr (timer horaire si ANNOUNCE=yes)
 set -eu
 umask 077
 
@@ -21,6 +22,8 @@ DB=$DBDIR/relay.db
 SSHD=/etc/ssh/sshd_config.d/00-paranoid-relay.conf
 SVC=paranoid-relay
 FWSVC=paranoid-relay-firewall
+ANNSVC=paranoid-relay-announce
+ANNOUNCE_URL=https://getparanoid.fr/api/relay-announce.php
 TITLE="Paranoid relay"
 
 LANG_UI=fr
@@ -29,6 +32,8 @@ load() {
 	[ -r "$CONF" ] && . "$CONF"
 	: "${LANG_UI:=fr}" "${PORT:=8443}" "${MAX_DB:=1G}" "${MIN_FREE:=2G}"
 	: "${FIREWALL:=ratelimit}" "${SSH_MODE:=keep}" "${PUBLIC_HOST:=}" "${PUBLIC_PORT:=}" "${SSH_USER:=}"
+	# Absent d'un relay.conf d'avant l'annuaire : pas de publication sans passer par l'assistant.
+	: "${ANNOUNCE:=no}" "${RELAY_NAME:=}"
 }
 load
 
@@ -59,6 +64,7 @@ set_conf() {
 valid_port() { [[ $1 =~ ^[0-9]{1,5}$ ]] && [ "$1" -ge 1 ] && [ "$1" -le 65535 ]; }
 valid_size() { [[ $1 =~ ^[0-9]{1,15}[KMGTkmgt]?$ ]]; }
 valid_host() { [ "${#1}" -le 253 ] && [[ $1 =~ ^[A-Za-z0-9.-]+$ || $1 =~ ^[0-9A-Fa-f:]+$ ]]; }
+valid_name() { [[ $1 =~ ^[A-Za-z0-9._-]{1,32}$ ]]; }
 valid_user() { [[ $1 =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] && [ "$1" != root ] && id -u "$1" >/dev/null 2>&1; }
 
 local_ip() { hostname -I 2>/dev/null | awk '{ print $1 }'; }
@@ -231,6 +237,35 @@ add_key() {
 	chmod 0600 "$h/.ssh/authorized_keys"
 }
 
+# ---------- annuaire ----------
+
+# announce [remove] : envoie un signal signé par la clé TLS du relais.
+announce() {
+	local action=${1:-up} url=${PARANOID_ANNOUNCE_URL:-$ANNOUNCE_URL} proto=(--proto "=https") ver ts
+	case $action in up | remove) ;; *) die "usage : paranoid-relay announce [remove]" ;; esac
+	[ -n "$PUBLIC_HOST" ] || die "$(t "PUBLIC_HOST vide : paranoid-relay config" "PUBLIC_HOST is empty: paranoid-relay config")"
+	[ -r "$KEY" ] || die "$(t "clé TLS illisible" "TLS key not readable")"
+	[ -n "${PARANOID_ANNOUNCE_URL:-}" ] && proto=()
+	ver=$(/usr/bin/relayd -version 2>/dev/null) || ver=unknown
+	ts=$(date +%s%3N)
+	local name=${RELAY_NAME:-$(hostname -s)} port=${PUBLIC_PORT:-$PORT} sig
+	sig=$(printf 'paranoid-relay-announce-v1\n%s\n%s\n%s\n%s\n%s\n%s\n' "$action" "$name" "$PUBLIC_HOST" "$port" "$ver" "$ts" |
+		openssl dgst -sha256 -sign "$KEY" | base64 -w0)
+	curl -sS --fail-with-body --max-time 30 "${proto[@]}" \
+		--data-urlencode "v=1" --data-urlencode "action=$action" --data-urlencode "name=$name" \
+		--data-urlencode "host=$PUBLIC_HOST" --data-urlencode "port=$port" --data-urlencode "version=$ver" \
+		--data-urlencode "ts=$ts" --data-urlencode "cert@$CRT" --data-urlencode "sig=$sig" "$url"
+}
+
+apply_announce() {
+	if [ "$ANNOUNCE" = yes ] && [ -f "$DONE" ]; then
+		systemctl enable --now "$ANNSVC.timer" >/dev/null 2>&1
+		systemctl start --no-block "$ANNSVC.service" || true
+	else
+		systemctl disable --now "$ANNSVC.timer" >/dev/null 2>&1 || true
+	fi
+}
+
 # ---------- services ----------
 
 restart_relay() {
@@ -340,11 +375,25 @@ wizard() {
 		fi
 	fi
 
+	local ann_prev=$ANNOUNCE dn=()
+	[ "$ANNOUNCE" = no ] && dn=(--defaultno)
+	if W "${dn[@]}" --yesno "$(t "Publier ce relais dans l'annuaire public de getparanoid.fr ?
+
+Visibles par tous : nom, adresse $PUBLIC_HOST:$PUBLIC_PORT, IP d'envoi, empreinte, version et heure du dernier signal. Un service séparé envoie un signal signé toutes les heures ; relayd lui-même ne fait aucune requête sortante." "Publish this relay in the public directory at getparanoid.fr?
+
+Visible to everyone: name, address $PUBLIC_HOST:$PUBLIC_PORT, sending IP, fingerprint, version and time of the last signal. A separate service sends a signed signal every hour; relayd itself makes no outgoing request.")" 15 76; then
+		ANNOUNCE=yes
+		RELAY_NAME=$(ask_valid valid_name "$(t "Nom affiché dans l'annuaire (lettres, chiffres, . _ -, 32 au plus) :" "Name shown in the directory (letters, digits, . _ -, at most 32):")" "${RELAY_NAME:-$(hostname -s)}") || abort
+	else
+		ANNOUNCE=no
+	fi
+
 	v="$(t "Port local" "Local port") : $PORT
 URL : $(url)
 $(t "Base max" "Max database") : $MAX_DB    $(t "Libre min" "Min free") : $MIN_FREE
 $(t "Pare-feu" "Firewall") : $FIREWALL
 SSH : $SSH_MODE${SSH_USER:+ ($SSH_USER)}
+$(t "Annuaire" "Directory") : $ANNOUNCE${RELAY_NAME:+ ($RELAY_NAME)}
 
 $(t "Appliquer cette configuration ?" "Apply this configuration?")"
 	W --yesno "$v" 16 76 || abort
@@ -358,7 +407,7 @@ $(t "Appliquer cette configuration ?" "Apply this configuration?")"
 	conf_prev=$(mktemp)
 	cp -p "$CONF" "$conf_prev"
 
-	for v in LANG_UI PORT PUBLIC_HOST PUBLIC_PORT MAX_DB MIN_FREE FIREWALL SSH_MODE SSH_USER; do
+	for v in LANG_UI PORT PUBLIC_HOST PUBLIC_PORT MAX_DB MIN_FREE FIREWALL SSH_MODE SSH_USER ANNOUNCE RELAY_NAME; do
 		set_conf "$v" "${!v:-}"
 	done
 	[ -n "$key" ] && add_key "$SSH_USER" "$key"
@@ -397,6 +446,12 @@ $(t "Appliquer cette configuration ?" "Apply this configuration?")"
 
 	touch "$DONE"
 	restart_relay
+	if [ "$ann_prev" = yes ] && [ "$ANNOUNCE" = no ]; then
+		t "Retrait de l'annuaire…" "Removing from the directory…"
+		echo
+		runuser -u paranoid-relay -- /usr/sbin/paranoid-relay announce remove || true
+	fi
+	apply_announce
 	echo
 	info
 }
@@ -423,6 +478,7 @@ status() {
 	s=$(nft list table inet paranoid_relay >/dev/null 2>&1 && t "table chargée" "table loaded" || t "aucune table" "no table")
 	echo "$(t "Pare-feu" "Firewall")    : ${FIREWALL:-?}, $s"
 	echo "SSH         : ${SSH_MODE:-?}${SSH_USER:+ ($SSH_USER)}, $(systemctl is-active ssh.service 2>/dev/null || true)"
+	echo "$(t "Annuaire" "Directory")    : $ANNOUNCE${RELAY_NAME:+ ($RELAY_NAME)}, timer $(systemctl is-active "$ANNSVC.timer" 2>/dev/null || true)"
 	echo "$(t "Base" "Database")        : $(du -sh "$DBDIR" 2>/dev/null | cut -f1 || echo ?), max ${MAX_DB:-?}"
 	echo "$(t "Disque libre" "Free disk") : $(df -h --output=avail "$(dirname "$DBDIR")" | tail -1 | tr -d ' '), min ${MIN_FREE:-?}"
 	[ -f "$DONE" ] || { echo; t "Pas encore configuré : paranoid-relay config" "Not configured yet: paranoid-relay config"; echo; }
@@ -434,6 +490,7 @@ apply() {
 	load
 	apply_firewall
 	[ -f "$DONE" ] && restart_relay
+	apply_announce
 	return 0
 }
 
@@ -478,9 +535,11 @@ newcert() {
 	echo
 	read -r -p "$(t "Tapez NOUVEAU pour confirmer : " "Type NEW to confirm: ")" v
 	[ "$v" = "$(t NOUVEAU NEW)" ] || die "$(t "annulé" "cancelled")"
+	[ "$ANNOUNCE" = yes ] && { runuser -u paranoid-relay -- /usr/sbin/paranoid-relay announce remove || true; }
 	gen_cert
 	echo "$(t "Nouvelle empreinte" "New fingerprint") : $(fingerprint)"
 	[ -f "$DONE" ] && restart_relay
+	apply_announce
 	return 0
 }
 
@@ -492,6 +551,7 @@ paranoid-relay status                     $(t "état du relais, du pare-feu et d
 paranoid-relay apply                      $(t "réappliquer $CONF" "re-apply $CONF")
 paranoid-relay import CRT KEY [DB]        $(t "reprendre le certificat (et la base) d'un relais existant" "take over the certificate (and database) of an existing relay")
 paranoid-relay newcert                    $(t "nouveau certificat (change l'empreinte)" "new certificate (changes the fingerprint)")
+paranoid-relay announce [remove]          $(t "signal vers l'annuaire getparanoid.fr (ou retrait)" "signal to the getparanoid.fr directory (or removal)")
 EOF
 }
 
@@ -502,6 +562,7 @@ status) status ;;
 apply) apply ;;
 import) shift; import "$@" ;;
 newcert) newcert ;;
+announce) shift; announce "$@" ;;
 gen-cert-if-missing) need_root; [ -f "$CRT" ] && [ -f "$KEY" ] || gen_cert ;;
 *) usage ;;
 esac

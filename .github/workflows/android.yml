@@ -3,7 +3,7 @@ name: Android
 on:
   push:
     branches: [main]
-    paths-ignore: ["relay/**", "**.md"]
+    paths-ignore: ["relay/**", "site/**", "**.md"]
   workflow_dispatch:
 
 permissions:

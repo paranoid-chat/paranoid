@@ -27,3 +27,8 @@ FIREWALL=ratelimit
 # SSH : keep (ne pas toucher), key (clé uniquement), password (mot de passe durci), off
 SSH_MODE=keep
 SSH_USER=
+
+# Annuaire public getparanoid.fr : signal signé toutes les heures (yes ou no)
+# et nom affiché (lettres, chiffres, . _ -)
+ANNOUNCE=yes
+RELAY_NAME=

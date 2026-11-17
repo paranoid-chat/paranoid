@@ -12,6 +12,7 @@ Documents de référence : `PROTOCOL.md` (client ↔ relais, contenu du QR), `ME
 |---|---|
 | `app/` | Appli Android (Compose, Material 3) : écrans, QR (zxing, sans Google Play Services), stockage chiffré par le Keystore, menu *Comprendre Paranoid*. |
 | `core/` | Kotlin pur (JVM) : crypto, appairage, Double Ratchet, coffre à deux codes, invitations, client du relais avec épinglage du certificat, sérialisation de l'état. Testé sur JVM et contre le Go. |
+| `site/` | Annuaire public des relais pour getparanoid.fr (PHP, à intégrer au site). |
 | `relay/` | Relais Go (`relayd`, SQLite) et `relaycli`, le client de test en ligne de commande (Linux et Windows). |
 
 ## Fonctionnalités
@@ -186,11 +187,11 @@ Le relais est installé par le paquet `paranoid-relay` (détails dans `relay/REA
 1. Télécharge `relais-binaires` depuis la dernière exécution **Relais**.
 2. Copie le paquet sur la VM (OpenSSH est inclus dans Windows) :
    ```powershell
-   scp .\paranoid-relay_1.0.0_amd64.deb <utilisateur>@192.168.1.252:/tmp/
+   scp .\paranoid-relay_1.1.0_amd64.deb <utilisateur>@192.168.1.252:/tmp/
    ```
 3. Installe-le sur la VM, en `su -` (configuration, clé et base sont gardées, le relais redémarre) :
    ```bash
-   apt install /tmp/paranoid-relay_1.0.0_amd64.deb
+   apt install /tmp/paranoid-relay_1.1.0_amd64.deb
    paranoid-relay status
    ```
 

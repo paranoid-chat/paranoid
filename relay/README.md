@@ -19,8 +19,9 @@ La CI construit `paranoid-relay_VERSION_amd64.deb` et `_arm64.deb` (artefact « 
 | Contenu | Rôle |
 |---|---|
 | `/usr/bin/relayd` | Binaire statique |
-| `/usr/sbin/paranoid-relay` | Administration : `config`, `info`, `status`, `apply`, `import`, `newcert` |
+| `/usr/sbin/paranoid-relay` | Administration : `config`, `info`, `status`, `apply`, `import`, `newcert`, `announce [remove]` |
 | `paranoid-relay.service` | Service durci : utilisateur système `paranoid-relay`, seule capacité `CAP_NET_BIND_SERVICE` (port 443 possible), système en lecture seule sauf `/var/lib/paranoid-relay`, filtre d'appels système (`systemd-analyze security` : 1.5) |
+| `paranoid-relay-announce.timer` | Toutes les heures (et 5 min après le démarrage), si `ANNOUNCE=yes` : `paranoid-relay announce` en utilisateur `paranoid-relay`, service durci séparé de `relayd` |
 | `paranoid-relay-firewall.service` | Charge `/etc/paranoid-relay/firewall.nft` (table `inet paranoid_relay`, séparée des règles existantes), rechargée après `nftables.service` |
 | `/etc/paranoid-relay/relay.conf` | Configuration écrite par l'assistant |
 | `/etc/paranoid-relay/relay.crt`, `relay.key` | Certificat auto-signé ECDSA P-256 généré à l'installation (clé `0640 root:paranoid-relay`) |
@@ -29,7 +30,7 @@ La CI construit `paranoid-relay_VERSION_amd64.deb` et `_arm64.deb` (artefact « 
 Installation et configuration, en root :
 
 ```bash
-apt install ./paranoid-relay_1.0.0_amd64.deb
+apt install ./paranoid-relay_1.1.0_amd64.deb
 paranoid-relay config
 ```
 
@@ -38,7 +39,8 @@ L'assistant (français ou anglais) demande le port local, l'adresse et le port p
 - **Pare-feu** : `ratelimit` limite seulement le port du relais (10 nouvelles connexions/s, 32 simultanées par IP), `full` bloque aussi tout le reste sauf SSH, `off` ne charge aucune règle.
 - **SSH** : `keep` ne touche à rien ; `key` (clé uniquement) et `password` (mot de passe de 14 caractères minimum, 3 types de caractères) écrivent `/etc/ssh/sshd_config.d/00-paranoid-relay.conf` : root interdit, un seul compte autorisé, 3 essais par connexion, 30 s pour s'authentifier, pas de redirections. Le pare-feu bloque 15 minutes une IP qui ouvre plus de 4 connexions SSH par minute. `off` désactive SSH (refusé si l'assistant tourne en SSH).
 - **Retour arrière** : lancé en SSH, l'assistant demande d'ouvrir une nouvelle connexion puis de taper `OK` dans les 120 s ; sans réponse, `relay.conf`, le pare-feu et SSH reviennent à leur état précédent.
-- `apt remove` arrête le relais et garde clé et base ; `apt purge` les efface (l'empreinte est perdue).
+- **Annuaire public** : l'assistant propose (Oui par défaut sur une nouvelle installation, Non pour un relais mis à jour depuis 1.0.0) de publier le relais sur getparanoid.fr, avec un nom au choix. Sont publiés : nom, adresse et port publics, IP d'envoi, empreinte, version, heure du dernier signal. Le signal est signé par la clé TLS du relais ; le site vérifie la signature et que l'adresse publique correspond à l'IP d'envoi (détails dans `../site/README.md`). Répondre Non retire le relais de l'annuaire. `relayd` lui-même ne fait toujours aucune requête sortante.
+- `apt remove` retire le relais de l'annuaire, l'arrête et garde clé et base ; `apt purge` les efface (l'empreinte est perdue).
 
 ## Compiler à la main (sur ton PC)
 

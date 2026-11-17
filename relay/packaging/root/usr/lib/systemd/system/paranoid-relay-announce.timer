@@ -1,0 +1,10 @@
+[Unit]
+Description=Signal horaire du relais Paranoid vers l'annuaire getparanoid.fr
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1h
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target

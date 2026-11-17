@@ -2,7 +2,7 @@ Package: paranoid-relay
 Version: @VERSION@
 Architecture: @ARCH@
 Maintainer: Paranoid <contact@getparanoid.fr>
-Depends: adduser, openssl, nftables, whiptail, systemd
+Depends: adduser, openssl, nftables, whiptail, systemd, curl, ca-certificates
 Recommends: openssh-server
 Section: net
 Priority: optional
