@@ -25,6 +25,7 @@ TITLE="Paranoid relay"
 
 LANG_UI=fr
 load() {
+	# shellcheck source=/dev/null
 	[ -r "$CONF" ] && . "$CONF"
 	: "${LANG_UI:=fr}" "${PORT:=8443}" "${MAX_DB:=1G}" "${MIN_FREE:=2G}"
 	: "${FIREWALL:=ratelimit}" "${SSH_MODE:=keep}" "${PUBLIC_HOST:=}" "${PUBLIC_PORT:=}" "${SSH_USER:=}"
