@@ -40,22 +40,7 @@ L'assistant (français ou anglais) demande le port local, l'adresse et le port p
 - **Retour arrière** : lancé en SSH, l'assistant demande d'ouvrir une nouvelle connexion puis de taper `OK` dans les 120 s ; sans réponse, `relay.conf`, le pare-feu et SSH reviennent à leur état précédent.
 - `apt remove` arrête le relais et garde clé et base ; `apt purge` les efface (l'empreinte est perdue).
 
-### Migrer le relais installé à la main vers le paquet
-
-L'empreinte reste la même : les téléphones ne voient aucune différence. En root sur `<vm-relais>` :
-
-```bash
-apt install ./paranoid-relay_1.0.0_amd64.deb
-systemctl stop relay
-paranoid-relay import /etc/relay/relay.crt /etc/relay/relay.key /var/lib/relay/relay.db
-paranoid-relay config        # port 8443, adresse <IP_PUBLIQUE>, port public 443
-paranoid-relay status
-systemctl disable relay
-```
-
-Retour à l'ancien relais si besoin : `systemctl stop paranoid-relay && systemctl start relay`.
-
-## 1. Compiler (sur ton PC)
+## Compiler à la main (sur ton PC)
 
 La CI compile tout (voir le `README.md` principal). Pour compiler à la main : Go 1.26 ou plus récent (go.dev/dl), puis dans ce dossier, en PowerShell :
 
@@ -68,38 +53,7 @@ go build -trimpath -ldflags "-s -w" -o relayd .
 
 Si `go test` échoue, garde la sortie exacte et envoie-la.
 
-## 2. Copier sur le serveur
-
-OpenSSH est inclus dans Windows :
-
-```powershell
-scp .\relayd <utilisateur>@192.168.1.252:/tmp/relayd
-```
-
-## 3. Installer et démarrer (sur le serveur, en `su -`)
-
-```bash
-install -o root -g root -m 0755 /tmp/relayd /opt/relay/relayd
-rm /tmp/relayd
-systemctl daemon-reload
-systemctl enable --now relay
-systemctl status relay --no-pager
-journalctl -u relay -n 10 --no-pager
-```
-
-Le journal doit afficher une ligne « relais à l'écoute sur :8443, empreinte SHA-256 : … ». Cette empreinte doit être identique à celle donnée par `openssl x509 -in /etc/relay/relay.crt -noout -fingerprint -sha256`.
-
-## 4. Vérifier
-
-Sur le serveur : `ss -tlnp | grep 8443`.
-
-Depuis ton PC (`-k` ignore la vérification du certificat auto-signé, uniquement pour ce test) :
-
-```powershell
-curl.exe -k -i https://192.168.1.252:8443/v1/box/AAAAAAAAAAAAAAAAAAAAAA/msgs
-```
-
-Réponse attendue : `404` avec le texte « boîte inconnue ». Cela prouve que TLS et le service fonctionnent.
+Pour tester le binaire sans le paquet : `./relayd --listen :8443 --cert relay.crt --key relay.key --db relay.db`, puis `curl -k -i https://127.0.0.1:8443/v1/box/AAAAAAAAAAAAAAAAAAAAAA/msgs` doit répondre `404` « boîte inconnue ». Pour construire le paquet : `packaging/build-deb.sh amd64 ./relayd dist`.
 
 ## Paramètres
 

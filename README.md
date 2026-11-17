@@ -55,7 +55,7 @@ Android 13 minimum.
 
 ## Prochaines étapes
 
-Paquet `.deb` du relais en cours de validation (`relay/README.md`, section « Paquet .deb »), puis image ISO Debian amd64 qui l'embarque : installation automatique après confirmation de l'effacement du disque, assistant au premier démarrage, `unattended-upgrades`, publication dans un dépôt public séparé.
+Image ISO Debian amd64 du relais, qui embarque le paquet `paranoid-relay` : installation automatique après confirmation de l'effacement du disque, assistant au premier démarrage, `unattended-upgrades`, publication dans un dépôt public séparé.
 
 ---
 
@@ -181,37 +181,26 @@ Après les scénarios 11, 15 et 16 : `& $C -d pc remove tel`, supprimer le conta
 
 ## Mettre à jour le relais (VM du relais)
 
+Le relais est installé par le paquet `paranoid-relay` (détails dans `relay/README.md`).
+
 1. Télécharge `relais-binaires` depuis la dernière exécution **Relais**.
-2. Copie `relayd-linux-amd64` sur la VM (OpenSSH est inclus dans Windows) :
+2. Copie le paquet sur la VM (OpenSSH est inclus dans Windows) :
    ```powershell
-   scp .\relayd-linux-amd64 <utilisateur>@192.168.1.252:/tmp/
+   scp .\paranoid-relay_1.0.0_amd64.deb <utilisateur>@192.168.1.252:/tmp/
    ```
-3. Installe-le sur la VM, en `su -` :
+3. Installe-le sur la VM, en `su -` (configuration, clé et base sont gardées, le relais redémarre) :
    ```bash
-   install -o root -g root -m 0755 /tmp/relayd-linux-amd64 /opt/relay/relayd && rm /tmp/relayd-linux-amd64
-   systemctl restart relay
-   journalctl -u relay -n 5 --no-pager
+   apt install /tmp/paranoid-relay_1.0.0_amd64.deb
+   paranoid-relay status
    ```
-   Le journal doit afficher « relais à l'écoute sur :8443 » avec l'empreinte `FB:2B:…:B0:EA`, suivie de « base max 1G, espace libre min 2G ».
 
-### Régler le plafond global
-
-Par défaut, la base occupe 1 Gio au maximum et le relais garde 2 Gio libres sur le disque. Pour changer ces valeurs, ajoute les options à l'`ExecStart`, en `su -` :
-
-```bash
-systemctl edit --full relay
-# ExecStart=/opt/relay/relayd --listen :8443 --cert /etc/relay/relay.crt --key /etc/relay/relay.key --db /var/lib/relay/relay.db --max-db 5G --min-free 2G
-systemctl restart relay
-journalctl -u relay -n 3 --no-pager
-```
-
-Tailles acceptées : un nombre d'octets, ou avec un suffixe `K`, `M`, `G`, `T` (puissances de 1024). `0` désactive le contrôle. Le fichier SQLite ne rétrécit pas tout seul après une vague de messages. Pour le réduire, service arrêté : `apt install sqlite3`, puis `sqlite3 /var/lib/relay/relay.db VACUUM`.
+Plafond global, port, pare-feu et SSH se règlent avec `paranoid-relay config` (ou en modifiant `/etc/paranoid-relay/relay.conf`, puis `paranoid-relay apply`). Tailles acceptées : un nombre d'octets, ou avec un suffixe `K`, `M`, `G`, `T` (puissances de 1024) ; `0` désactive le contrôle. Le fichier SQLite ne rétrécit pas tout seul après une vague de messages. Pour le réduire, service arrêté : `apt install sqlite3`, puis `sqlite3 /var/lib/paranoid-relay/relay.db VACUUM`.
 
 ## En cas de problème
 
 | Symptôme | Cause probable |
 |---|---|
-| « Relais injoignable » | Adresse LAN utilisée hors du Wi-Fi, redirection de la box absente, ou service `relay` arrêté (`systemctl status relay`). |
+| « Relais injoignable » | Adresse LAN utilisée hors du Wi-Fi, redirection de la box absente, ou relais arrêté (`paranoid-relay status`). |
 | « empreinte du relais inattendue » | L'empreinte saisie ne correspond pas au certificat du relais. |
 | « version d'invitation non prise en charge » | L'autre côté n'a pas la v1.0 (appli ou `relaycli`). |
 | Le téléphone reste « En attente du scan » | L'autre n'a pas encore scanné, ou son envoi a échoué (il voit une erreur) : il recommence le scan. |
@@ -219,4 +208,4 @@ Tailles acceptées : un nombre d'octets, ou avec un suffixe `K`, `M`, `G`, `T` (
 | « Données illisibles » au démarrage | La clé Keystore a disparu (appli désinstallée, par exemple). L'identité est perdue, c'est voulu. |
 | L'APK refuse de s'installer par-dessus | Signature différente (APK d'une compilation sans les secrets). Il faut désinstaller, ce qui perd l'identité. |
 | « Problème lors de l'analyse du package » | Le téléphone a une version d'Android antérieure à 13. |
-| « le relais est plein » | Plafond global atteint : `journalctl -u relay`, `du -h /var/lib/relay`, `df -h /`. Relever le plafond (`--max-db`) ou libérer de la place. |
+| « le relais est plein » | Plafond global atteint : `paranoid-relay status`. Relever `MAX_DB` (`paranoid-relay config`) ou libérer de la place. |
