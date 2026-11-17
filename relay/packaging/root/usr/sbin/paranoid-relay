@@ -311,9 +311,9 @@ wizard() {
 
 	PORT=$(ask_valid valid_port "$(t "Port TCP d'écoute du relais sur cette machine :" "TCP port the relay listens on, on this machine:")" "${PORT:-8443}") || abort
 
-	PUBLIC_HOST=$(ask_valid valid_host "$(t "Adresse publique du relais (IP publique ou nom DNS), celle que les utilisateurs saisiront dans l'appli :" "Public address of the relay (public IP or DNS name), the one users will type in the app:")" "${PUBLIC_HOST:-$(local_ip)}") || abort
+	PUBLIC_HOST=$(ask_valid valid_host "$(t "Adresse publique du relais (IP publique ou nom DNS) :" "Public address of the relay (public IP or DNS name):")" "${PUBLIC_HOST:-$(local_ip)}") || abort
 
-	PUBLIC_PORT=$(ask_valid valid_port "$(t "Port vu depuis Internet (différent de $PORT si la box redirige, ex. 443 vers $PORT) :" "Port seen from the Internet (different from $PORT if the router forwards, e.g. 443 to $PORT):")" "${PUBLIC_PORT:-$PORT}") || abort
+	PUBLIC_PORT=$(ask_valid valid_port "$(t "Port vu depuis Internet (en cas de redirection de port public différent du port local, sinon laisser par défaut) :" "Port seen from the Internet (if a public port is forwarded to a different local port, otherwise leave the default):")" "${PUBLIC_PORT:-$PORT}") || abort
 
 	v=$(df -h --output=avail "$(dirname "$DBDIR")" | tail -1 | tr -d ' ')
 	MAX_DB=$(ask_valid valid_size "$(t "Taille maximale de la base (K, M, G, T ; 0 = sans limite). Espace libre actuel : $v." "Maximum database size (K, M, G, T; 0 = unlimited). Free space now: $v.")" "${MAX_DB:-1G}") || abort
@@ -379,9 +379,9 @@ wizard() {
 	[ "$ANNOUNCE" = no ] && dn=(--defaultno)
 	if W "${dn[@]}" --yesno "$(t "Publier ce relais dans l'annuaire public de getparanoid.fr ?
 
-Visibles par tous : nom, adresse $PUBLIC_HOST:$PUBLIC_PORT, IP d'envoi, empreinte, version et heure du dernier signal. Un service séparé envoie un signal signé toutes les heures ; relayd lui-même ne fait aucune requête sortante." "Publish this relay in the public directory at getparanoid.fr?
+Informations publiées : hostname, IP publique, empreinte, version et heure du dernier signal." "Publish this relay in the public directory at getparanoid.fr?
 
-Visible to everyone: name, address $PUBLIC_HOST:$PUBLIC_PORT, sending IP, fingerprint, version and time of the last signal. A separate service sends a signed signal every hour; relayd itself makes no outgoing request.")" 15 76; then
+Published information: hostname, public IP, fingerprint, version and time of the last signal.")" 15 76; then
 		ANNOUNCE=yes
 		RELAY_NAME=$(ask_valid valid_name "$(t "Nom affiché dans l'annuaire (lettres, chiffres, . _ -, 32 au plus) :" "Name shown in the directory (letters, digits, . _ -, at most 32):")" "${RELAY_NAME:-$(hostname -s)}") || abort
 	else

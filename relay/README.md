@@ -30,7 +30,7 @@ La CI construit `paranoid-relay_VERSION_amd64.deb` et `_arm64.deb` (artefact « 
 Installation et configuration, en root :
 
 ```bash
-apt install ./paranoid-relay_1.1.0_amd64.deb
+apt install ./paranoid-relay_1.1.1_amd64.deb
 paranoid-relay config
 ```
 
