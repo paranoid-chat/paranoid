@@ -12,6 +12,49 @@ Implémentation de `../PROTOCOL.md` : boîtes aux lettres chiffrées de bout en 
 | `server_test.go` | Tests HTTP de bout en bout (cycle complet, quota, auth, purge, limites) |
 | `limiter_test.go` | Tests du limiteur de débit et du cache de nonces |
 
+## Paquet `.deb` (Debian 12 et 13)
+
+La CI construit `paranoid-relay_VERSION_amd64.deb` et `_arm64.deb` (artefact « relais-binaires »). Sources dans `packaging/` : `build-deb.sh`, scripts `debian/`, arborescence `root/`, version dans `packaging/VERSION`.
+
+| Contenu | Rôle |
+|---|---|
+| `/usr/bin/relayd` | Binaire statique |
+| `/usr/sbin/paranoid-relay` | Administration : `config`, `info`, `status`, `apply`, `import`, `newcert` |
+| `paranoid-relay.service` | Service durci : utilisateur système `paranoid-relay`, seule capacité `CAP_NET_BIND_SERVICE` (port 443 possible), système en lecture seule sauf `/var/lib/paranoid-relay`, filtre d'appels système (`systemd-analyze security` : 1.5) |
+| `paranoid-relay-firewall.service` | Charge `/etc/paranoid-relay/firewall.nft` (table `inet paranoid_relay`, séparée des règles existantes), rechargée après `nftables.service` |
+| `/etc/paranoid-relay/relay.conf` | Configuration écrite par l'assistant |
+| `/etc/paranoid-relay/relay.crt`, `relay.key` | Certificat auto-signé ECDSA P-256 généré à l'installation (clé `0640 root:paranoid-relay`) |
+| `/var/lib/paranoid-relay/relay.db` | Base SQLite |
+
+Installation et configuration, en root :
+
+```bash
+apt install ./paranoid-relay_1.0.0_amd64.deb
+paranoid-relay config
+```
+
+L'assistant (français ou anglais) demande le port local, l'adresse et le port publics, `--max-db` et `--min-free`, le mode du pare-feu et l'accès SSH, puis affiche l'URL et l'empreinte à donner aux utilisateurs (`paranoid-relay info` les réaffiche).
+
+- **Pare-feu** : `ratelimit` limite seulement le port du relais (10 nouvelles connexions/s, 32 simultanées par IP), `full` bloque aussi tout le reste sauf SSH, `off` ne charge aucune règle.
+- **SSH** : `keep` ne touche à rien ; `key` (clé uniquement) et `password` (mot de passe de 14 caractères minimum, 3 types de caractères) écrivent `/etc/ssh/sshd_config.d/00-paranoid-relay.conf` : root interdit, un seul compte autorisé, 3 essais par connexion, 30 s pour s'authentifier, pas de redirections. Le pare-feu bloque 15 minutes une IP qui ouvre plus de 4 connexions SSH par minute. `off` désactive SSH (refusé si l'assistant tourne en SSH).
+- **Retour arrière** : lancé en SSH, l'assistant demande d'ouvrir une nouvelle connexion puis de taper `OK` dans les 120 s ; sans réponse, `relay.conf`, le pare-feu et SSH reviennent à leur état précédent.
+- `apt remove` arrête le relais et garde clé et base ; `apt purge` les efface (l'empreinte est perdue).
+
+### Migrer le relais installé à la main vers le paquet
+
+L'empreinte reste la même : les téléphones ne voient aucune différence. En root sur `<vm-relais>` :
+
+```bash
+apt install ./paranoid-relay_1.0.0_amd64.deb
+systemctl stop relay
+paranoid-relay import /etc/relay/relay.crt /etc/relay/relay.key /var/lib/relay/relay.db
+paranoid-relay config        # port 8443, adresse <IP_PUBLIQUE>, port public 443
+paranoid-relay status
+systemctl disable relay
+```
+
+Retour à l'ancien relais si besoin : `systemctl stop paranoid-relay && systemctl start relay`.
+
 ## 1. Compiler (sur ton PC)
 
 La CI compile tout (voir le `README.md` principal). Pour compiler à la main : Go 1.26 ou plus récent (go.dev/dl), puis dans ce dossier, en PowerShell :

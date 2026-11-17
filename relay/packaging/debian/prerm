@@ -1,0 +1,6 @@
+#!/bin/sh
+set -e
+if [ "$1" = remove ] && [ -d /run/systemd/system ]; then
+	systemctl disable --now paranoid-relay.service paranoid-relay-firewall.service >/dev/null 2>&1 || true
+fi
+exit 0

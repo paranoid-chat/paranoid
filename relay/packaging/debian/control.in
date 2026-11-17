@@ -1,0 +1,13 @@
+Package: paranoid-relay
+Version: @VERSION@
+Architecture: @ARCH@
+Maintainer: Paranoid <contact@getparanoid.fr>
+Depends: adduser, openssl, nftables, whiptail, systemd
+Recommends: openssh-server
+Section: net
+Priority: optional
+Homepage: https://getparanoid.fr
+Description: Relais de messagerie Paranoid
+ Relais interchangeable pour l'appli Android Paranoid : boîtes aux lettres
+ de messages chiffrés de bout en bout, sans compte ni journal d'accès.
+ Configuration avec « paranoid-relay config ».

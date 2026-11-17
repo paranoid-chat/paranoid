@@ -55,7 +55,7 @@ Android 13 minimum.
 
 ## Prochaines étapes
 
-Paquet `.deb`, puis image ISO Debian pour héberger un relais.
+Paquet `.deb` du relais en cours de validation (`relay/README.md`, section « Paquet .deb »), puis image ISO Debian amd64 qui l'embarque : installation automatique après confirmation de l'effacement du disque, assistant au premier démarrage, `unattended-upgrades`, publication dans un dépôt public séparé.
 
 ---
 
@@ -66,7 +66,7 @@ Chaque push sur `main` déclenche la CI :
 | Exécution | Artefact | Contenu |
 |---|---|---|
 | **Android** (hors `relay/` et `*.md`) | `paranoid-apk` | APK signé avec la clé du dépôt (secrets `PARANOID_*`) + `SHA256SUMS` |
-| **Relais** (si `relay/` change) | `relais-binaires` | `relayd-linux-amd64`, `relayd-linux-arm64`, `relaycli-linux-*`, `relaycli-windows-amd64.exe` + `SHA256SUMS` |
+| **Relais** (si `relay/` change) | `relais-binaires` | `relayd-linux-amd64`, `relayd-linux-arm64`, `relaycli-linux-*`, `relaycli-windows-amd64.exe`, `paranoid-relay_*_amd64.deb`, `paranoid-relay_*_arm64.deb` + `SHA256SUMS` |
 
 Les artefacts se téléchargent depuis l'onglet *Actions* : ouvre l'exécution, puis la section *Artifacts* en bas de page. Ils sont conservés 14 jours.
 

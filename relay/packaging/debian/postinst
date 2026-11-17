@@ -1,0 +1,20 @@
+#!/bin/sh
+set -e
+if [ "$1" = configure ]; then
+	if ! getent passwd paranoid-relay >/dev/null; then
+		adduser --system --group --no-create-home --home /nonexistent --quiet paranoid-relay
+	fi
+	install -d -o root -g paranoid-relay -m 0750 /etc/paranoid-relay
+	[ -f /etc/paranoid-relay/relay.conf ] ||
+		install -o root -g paranoid-relay -m 0640 /usr/share/paranoid-relay/relay.conf.default /etc/paranoid-relay/relay.conf
+	/usr/sbin/paranoid-relay gen-cert-if-missing
+	if [ -d /run/systemd/system ]; then
+		systemctl daemon-reload
+		if [ -f /etc/paranoid-relay/.configured ]; then
+			/usr/sbin/paranoid-relay apply || true
+		else
+			echo "Relais Paranoid installé. Configuration : paranoid-relay config"
+		fi
+	fi
+fi
+exit 0

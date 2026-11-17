@@ -1,0 +1,506 @@
+#!/bin/bash
+# paranoid-relay : administration du relais Paranoid.
+#   config   assistant de configuration (whiptail)
+#   info     URL et empreinte à donner aux utilisateurs
+#   status   état du service, du pare-feu, de la base
+#   apply    régénère le pare-feu et redémarre le relais d'après relay.conf
+#   import   reprend le certificat, la clé et la base d'un relais existant
+#   newcert  génère un nouveau certificat (tous les utilisateurs devront changer l'empreinte)
+set -eu
+umask 077
+
+ETC=/etc/paranoid-relay
+CONF=$ETC/relay.conf
+DEFAULT=/usr/share/paranoid-relay/relay.conf.default
+CRT=$ETC/relay.crt
+KEY=$ETC/relay.key
+FW=$ETC/firewall.nft
+DONE=$ETC/.configured
+DBDIR=/var/lib/paranoid-relay
+DB=$DBDIR/relay.db
+SSHD=/etc/ssh/sshd_config.d/00-paranoid-relay.conf
+SVC=paranoid-relay
+FWSVC=paranoid-relay-firewall
+TITLE="Paranoid relay"
+
+LANG_UI=fr
+load() {
+	[ -r "$CONF" ] && . "$CONF"
+	: "${LANG_UI:=fr}" "${PORT:=8443}" "${MAX_DB:=1G}" "${MIN_FREE:=2G}"
+	: "${FIREWALL:=ratelimit}" "${SSH_MODE:=keep}" "${PUBLIC_HOST:=}" "${PUBLIC_PORT:=}" "${SSH_USER:=}"
+}
+load
+
+t() { if [ "${LANG_UI:-fr}" = en ]; then printf '%s' "$2"; else printf '%s' "$1"; fi; }
+die() { echo "paranoid-relay: $*" >&2; exit 1; }
+need_root() { [ "$(id -u)" = 0 ] || die "$(t 'à lancer en root (su - ou sudo)' 'must be run as root (su - or sudo)')"; }
+
+# ---------- configuration ----------
+
+ensure_conf() {
+	[ -f "$CONF" ] && return
+	install -o root -g paranoid-relay -m 0640 "$DEFAULT" "$CONF"
+}
+
+# set_conf CLÉ VALEUR : remplace la ligne CLÉ=… (les valeurs sont validées avant).
+set_conf() {
+	local tmp
+	tmp=$(mktemp "$ETC/.relay.conf.XXXXXX")
+	awk -v k="$1" -v v="$2" '
+		index($0, k "=") == 1 { print k "=" v; done = 1; next }
+		{ print }
+		END { if (!done) print k "=" v }' "$CONF" >"$tmp"
+	chown root:paranoid-relay "$tmp"
+	chmod 0640 "$tmp"
+	mv "$tmp" "$CONF"
+}
+
+valid_port() { [[ $1 =~ ^[0-9]{1,5}$ ]] && [ "$1" -ge 1 ] && [ "$1" -le 65535 ]; }
+valid_size() { [[ $1 =~ ^[0-9]{1,15}[KMGTkmgt]?$ ]]; }
+valid_host() { [ "${#1}" -le 253 ] && [[ $1 =~ ^[A-Za-z0-9.-]+$ || $1 =~ ^[0-9A-Fa-f:]+$ ]]; }
+valid_user() { [[ $1 =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] && [ "$1" != root ] && id -u "$1" >/dev/null 2>&1; }
+
+local_ip() { hostname -I 2>/dev/null | awk '{ print $1 }'; }
+
+url() {
+	local h=${PUBLIC_HOST:-$(local_ip)} p=${PUBLIC_PORT:-${PORT:-8443}}
+	case $h in *:*) h="[$h]" ;; esac
+	if [ "$p" = 443 ]; then echo "https://$h"; else echo "https://$h:$p"; fi
+}
+
+fingerprint() { openssl x509 -in "$CRT" -noout -fingerprint -sha256 | cut -d= -f2; }
+
+ssh_port() {
+	local p
+	p=$(sshd -T 2>/dev/null | awk '$1 == "port" { print $2; exit }') || true
+	echo "${p:-22}"
+}
+
+# ---------- certificat ----------
+
+gen_cert() {
+	local k c
+	k=$(mktemp "$ETC/.key.XXXXXX")
+	c=$(mktemp "$ETC/.crt.XXXXXX")
+	openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
+		-days 36500 -subj "/CN=paranoid-relay" -keyout "$k" -out "$c" 2>/dev/null
+	chown root:paranoid-relay "$k"
+	chmod 0640 "$k"
+	chmod 0644 "$c"
+	mv "$k" "$KEY"
+	mv "$c" "$CRT"
+}
+
+# ---------- pare-feu ----------
+
+gen_firewall() {
+	local out=$1 p=$PORT sp="" full=0
+	[ "$FIREWALL" = full ] && full=1
+	if [ "$SSH_MODE" != off ] && { [ $full = 1 ] || [ "$SSH_MODE" != keep ]; }; then sp=$(ssh_port); fi
+	{
+		echo "# Généré par paranoid-relay : ne pas modifier, éditer $CONF puis « paranoid-relay apply »."
+		echo "table inet paranoid_relay {}"
+		echo "delete table inet paranoid_relay"
+		echo "table inet paranoid_relay {"
+		echo "	set relay_flood { type ipv4_addr; flags dynamic, timeout; timeout 1m; }"
+		echo "	set relay_conn { type ipv4_addr; flags dynamic; }"
+		if [ -n "$sp" ]; then
+			echo "	set ssh_rate { type ipv4_addr; flags dynamic, timeout; timeout 1m; }"
+			echo "	set ssh_ban { type ipv4_addr; flags timeout; timeout 15m; }"
+		fi
+		echo "	chain input {"
+		if [ $full = 1 ]; then
+			echo "		type filter hook input priority filter - 10; policy drop;"
+			echo "		iif \"lo\" accept"
+			echo "		ct state established,related accept"
+			echo "		ct state invalid drop"
+			echo "		icmp type echo-request limit rate 5/second accept"
+			echo "		meta l4proto ipv6-icmp accept"
+			echo "		udp sport 67 udp dport 68 accept"
+		else
+			echo "		type filter hook input priority filter - 10; policy accept;"
+		fi
+		echo "		# Relais : 10 nouvelles connexions/s et 32 connexions simultanées par IP."
+		echo "		tcp dport $p ct state new update @relay_flood { ip saddr limit rate over 10/second burst 20 packets } drop"
+		echo "		tcp dport $p ct state new add @relay_conn { ip saddr ct count over 32 } drop"
+		[ $full = 1 ] && echo "		tcp dport $p accept"
+		if [ -n "$sp" ]; then
+			echo "		# SSH : au-delà de 4 connexions par minute, IP bloquée 15 minutes."
+			echo "		tcp dport $sp ct state new ip saddr @ssh_ban drop"
+			echo "		tcp dport $sp ct state new update @ssh_rate { ip saddr limit rate over 4/minute burst 4 packets } add @ssh_ban { ip saddr } drop"
+			[ $full = 1 ] && echo "		tcp dport $sp accept"
+		fi
+		echo "	}"
+		echo "}"
+	} >"$out"
+}
+
+apply_firewall() {
+	if [ "$FIREWALL" = off ]; then
+		systemctl disable --now "$FWSVC" >/dev/null 2>&1 || true
+		rm -f "$FW"
+		return
+	fi
+	local tmp
+	tmp=$(mktemp "$ETC/.firewall.XXXXXX")
+	gen_firewall "$tmp"
+	if ! nft -c -f "$tmp"; then
+		rm -f "$tmp"
+		die "$(t 'règles nftables refusées, pare-feu inchangé' 'nftables rejected the rules, firewall unchanged')"
+	fi
+	chmod 0600 "$tmp"
+	mv "$tmp" "$FW"
+	systemctl enable "$FWSVC" >/dev/null 2>&1
+	systemctl restart "$FWSVC"
+}
+
+# ---------- SSH ----------
+
+gen_sshd() {
+	echo "# Géré par paranoid-relay (SSH_MODE=$SSH_MODE) : ne pas modifier à la main."
+	echo "PermitRootLogin no"
+	echo "AllowUsers $SSH_USER"
+	echo "PubkeyAuthentication yes"
+	if [ "$SSH_MODE" = key ]; then
+		echo "PasswordAuthentication no"
+		echo "AuthenticationMethods publickey"
+	else
+		echo "PasswordAuthentication yes"
+	fi
+	echo "KbdInteractiveAuthentication no"
+	echo "PermitEmptyPasswords no"
+	echo "MaxAuthTries 3"
+	echo "LoginGraceTime 30"
+	echo "MaxSessions 2"
+	echo "MaxStartups 3:50:10"
+	echo "ClientAliveInterval 300"
+	echo "ClientAliveCountMax 2"
+	echo "X11Forwarding no"
+	echo "AllowTcpForwarding no"
+	echo "AllowAgentForwarding no"
+	echo "PermitTunnel no"
+}
+
+apply_ssh() {
+	case $SSH_MODE in
+	keep) return ;;
+	off)
+		systemctl disable --now ssh.service ssh.socket >/dev/null 2>&1 || true
+		return ;;
+	esac
+	mkdir -p "$(dirname "$SSHD")"
+	gen_sshd >"$SSHD.new"
+	chmod 0644 "$SSHD.new"
+	[ -f "$SSHD" ] && cp -p "$SSHD" "$SSHD.prev"
+	mv "$SSHD.new" "$SSHD"
+	if ! sshd -t; then
+		if [ -f "$SSHD.prev" ]; then mv "$SSHD.prev" "$SSHD"; else rm -f "$SSHD"; fi
+		die "$(t 'configuration SSH refusée par sshd -t, SSH inchangé' 'sshd -t rejected the SSH configuration, SSH unchanged')"
+	fi
+	systemctl enable ssh.service >/dev/null 2>&1 || true
+	systemctl reload-or-restart ssh.service
+}
+
+strong_password() {
+	local p=$1 c=0
+	[ "${#p}" -ge 14 ] || return 1
+	case $p in *"$SSH_USER"*) return 1 ;; esac
+	[[ $p =~ [a-z] ]] && c=$((c + 1))
+	[[ $p =~ [A-Z] ]] && c=$((c + 1))
+	[[ $p =~ [0-9] ]] && c=$((c + 1))
+	[[ $p =~ [^a-zA-Z0-9] ]] && c=$((c + 1))
+	[ $c -ge 3 ]
+}
+
+key_count() {
+	local h f
+	h=$(getent passwd "$1" | cut -d: -f6)
+	f=$h/.ssh/authorized_keys
+	if [ -f "$f" ]; then grep -cE '^(ssh-|ecdsa-|sk-)' "$f" || true; else echo 0; fi
+}
+
+add_key() {
+	local u=$1 key=$2 h g
+	h=$(getent passwd "$u" | cut -d: -f6)
+	g=$(id -gn "$u")
+	install -d -o "$u" -g "$g" -m 0700 "$h/.ssh"
+	touch "$h/.ssh/authorized_keys"
+	grep -qxF "$key" "$h/.ssh/authorized_keys" || echo "$key" >>"$h/.ssh/authorized_keys"
+	chown "$u:$g" "$h/.ssh/authorized_keys"
+	chmod 0600 "$h/.ssh/authorized_keys"
+}
+
+# ---------- services ----------
+
+restart_relay() {
+	systemctl enable "$SVC" >/dev/null 2>&1
+	systemctl restart "$SVC"
+	sleep 2
+	systemctl is-active --quiet "$SVC" ||
+		die "$(t "le relais ne démarre pas : journalctl -u $SVC -n 20" "the relay does not start: journalctl -u $SVC -n 20")"
+}
+
+# ---------- assistant ----------
+
+W() {
+	whiptail --title "$TITLE" --ok-button OK --cancel-button "$(t Annuler Cancel)" \
+		--yes-button "$(t Oui Yes)" --no-button "$(t Non No)" "$@" 3>&1 1>&2 2>&3
+}
+abort() {
+	clear
+	echo "$(t 'Annulé, rien n'"'"'a été modifié.' 'Cancelled, nothing was changed.')"
+	exit 1
+}
+ask() { W --inputbox "$1" 14 76 "$2"; }
+
+ask_valid() { # ask_valid FONCTION_DE_VALIDATION TEXTE DÉFAUT
+	local v
+	while :; do
+		v=$(ask "$2" "$3") || return 1
+		if "$1" "$v"; then echo "$v"; return; fi
+		W --msgbox "$(t "Valeur invalide : $v" "Invalid value: $v")" 8 60 || true
+	done
+}
+
+wizard() {
+	need_root
+	command -v whiptail >/dev/null || die "whiptail manquant : apt install whiptail"
+	ensure_conf
+	load
+	local over_ssh=${SSH_CONNECTION:-} v key="" pass="" pass2=""
+
+	v=$(W --default-item "${LANG_UI:-fr}" --menu "Langue / Language" 12 60 2 \
+		fr "Français" en "English") || abort
+	LANG_UI=$v
+
+	PORT=$(ask_valid valid_port "$(t "Port TCP d'écoute du relais sur cette machine :" "TCP port the relay listens on, on this machine:")" "${PORT:-8443}") || abort
+
+	PUBLIC_HOST=$(ask_valid valid_host "$(t "Adresse publique du relais (IP publique ou nom DNS), celle que les utilisateurs saisiront dans l'appli :" "Public address of the relay (public IP or DNS name), the one users will type in the app:")" "${PUBLIC_HOST:-$(local_ip)}") || abort
+
+	PUBLIC_PORT=$(ask_valid valid_port "$(t "Port vu depuis Internet (différent de $PORT si la box redirige, ex. 443 vers $PORT) :" "Port seen from the Internet (different from $PORT if the router forwards, e.g. 443 to $PORT):")" "${PUBLIC_PORT:-$PORT}") || abort
+
+	v=$(df -h --output=avail "$(dirname "$DBDIR")" | tail -1 | tr -d ' ')
+	MAX_DB=$(ask_valid valid_size "$(t "Taille maximale de la base (K, M, G, T ; 0 = sans limite). Espace libre actuel : $v." "Maximum database size (K, M, G, T; 0 = unlimited). Free space now: $v.")" "${MAX_DB:-1G}") || abort
+	MIN_FREE=$(ask_valid valid_size "$(t "Espace disque à toujours laisser libre (0 = sans limite) :" "Disk space to always keep free (0 = unlimited):")" "${MIN_FREE:-2G}") || abort
+
+	FIREWALL=$(W --default-item "${FIREWALL:-ratelimit}" --menu "$(t "Pare-feu nftables (table séparée, n'efface pas les règles existantes) :" "nftables firewall (separate table, existing rules are kept):")" 15 76 3 \
+		ratelimit "$(t "Limiter seulement les connexions au relais" "Only rate-limit connections to the relay")" \
+		full "$(t "Tout bloquer sauf le relais et SSH" "Block everything except the relay and SSH")" \
+		off "$(t "Aucune règle" "No rules")") || abort
+
+	while :; do
+		SSH_MODE=$(W --default-item "${SSH_MODE:-keep}" --menu "$(t "Accès SSH d'administration :" "SSH admin access:")" 15 76 4 \
+			keep "$(t "Ne pas modifier la configuration SSH" "Leave the SSH configuration as is")" \
+			key "$(t "Clé uniquement, root interdit, 3 essais" "Key only, no root, 3 attempts")" \
+			password "$(t "Mot de passe fort, root interdit, 3 essais" "Strong password, no root, 3 attempts")" \
+			off "$(t "Désactiver SSH (console seule)" "Disable SSH (console only)")") || abort
+		if [ "$SSH_MODE" = off ] && [ -n "$over_ssh" ]; then
+			W --msgbox "$(t "Vous êtes connecté par SSH : désactivez SSH depuis la console." "You are connected over SSH: disable SSH from the console.")" 8 70 || true
+			continue
+		fi
+		break
+	done
+
+	if [ "$SSH_MODE" = key ] || [ "$SSH_MODE" = password ]; then
+		SSH_USER=$(ask_valid valid_user "$(t "Seul compte autorisé en SSH (existant, pas root) :" "Only account allowed over SSH (existing, not root):")" "${SSH_USER:-${SUDO_USER:-$(logname 2>/dev/null || true)}}") || abort
+	fi
+
+	if [ "$SSH_MODE" = key ]; then
+		while :; do
+			v=$(key_count "$SSH_USER")
+			key=$(ask "$(t "Clé publique SSH à ajouter pour $SSH_USER (ssh-ed25519 AAAA…). $SSH_USER en a déjà $v. Laisser vide pour ne rien ajouter." "SSH public key to add for $SSH_USER (ssh-ed25519 AAAA…). $SSH_USER already has $v. Leave empty to add none.")" "") || abort
+			if [ -n "$key" ]; then
+				if ssh-keygen -l -f - <<<"$key" >/dev/null 2>&1; then break; fi
+				W --msgbox "$(t "Clé publique invalide." "Invalid public key.")" 8 50 || true
+				continue
+			fi
+			[ "$v" -gt 0 ] && break
+			W --msgbox "$(t "$SSH_USER n'a aucune clé : sans clé, plus personne ne pourra se connecter en SSH." "$SSH_USER has no key: without one, nobody could log in over SSH.")" 9 70 || true
+		done
+	fi
+
+	if [ "$SSH_MODE" = password ]; then
+		if passwd -S "$SSH_USER" 2>/dev/null | awk '{ exit !($2 == "P") }' &&
+			! W --yesno "$(t "Définir maintenant un nouveau mot de passe fort pour $SSH_USER ?" "Set a new strong password for $SSH_USER now?")" 8 70; then
+			pass=""
+		else
+			while :; do
+				pass=$(W --passwordbox "$(t "Mot de passe de $SSH_USER : 14 caractères minimum, 3 types parmi minuscules, majuscules, chiffres, symboles." "Password for $SSH_USER: at least 14 characters, 3 kinds among lowercase, uppercase, digits, symbols.")" 10 76) || abort
+				pass2=$(W --passwordbox "$(t "Confirmer le mot de passe :" "Confirm the password:")" 8 76) || abort
+				if [ "$pass" != "$pass2" ]; then
+					W --msgbox "$(t "Les deux saisies diffèrent." "The two entries differ.")" 8 50 || true
+				elif ! strong_password "$pass"; then
+					W --msgbox "$(t "Mot de passe trop faible." "Password too weak.")" 8 50 || true
+				else
+					break
+				fi
+			done
+			pass2=""
+		fi
+	fi
+
+	v="$(t "Port local" "Local port") : $PORT
+URL : $(url)
+$(t "Base max" "Max database") : $MAX_DB    $(t "Libre min" "Min free") : $MIN_FREE
+$(t "Pare-feu" "Firewall") : $FIREWALL
+SSH : $SSH_MODE${SSH_USER:+ ($SSH_USER)}
+
+$(t "Appliquer cette configuration ?" "Apply this configuration?")"
+	W --yesno "$v" 16 76 || abort
+	clear
+
+	# Sauvegarde pour un retour arrière si la connexion SSH est perdue.
+	local fw_prev="" sshd_prev=""
+	[ -f "$FW" ] && { fw_prev=$(mktemp); cp -p "$FW" "$fw_prev"; }
+	[ -f "$SSHD" ] && { sshd_prev=$(mktemp); cp -p "$SSHD" "$sshd_prev"; }
+	local conf_prev
+	conf_prev=$(mktemp)
+	cp -p "$CONF" "$conf_prev"
+
+	for v in LANG_UI PORT PUBLIC_HOST PUBLIC_PORT MAX_DB MIN_FREE FIREWALL SSH_MODE SSH_USER; do
+		set_conf "$v" "${!v:-}"
+	done
+	[ -n "$key" ] && add_key "$SSH_USER" "$key"
+	if [ -n "$pass" ]; then
+		printf '%s:%s\n' "$SSH_USER" "$pass" | chpasswd
+		pass=""
+	fi
+	apply_ssh
+	apply_firewall
+
+	if [ -n "$over_ssh" ] && { [ "$SSH_MODE" != keep ] || [ "$FIREWALL" = full ]; }; then
+		echo
+		t "Ouvrez une NOUVELLE connexion SSH pour vérifier l'accès, puis tapez OK ici (120 s)." \
+			"Open a NEW SSH connection to check access, then type OK here (120 s)."
+		echo
+		t "Sans réponse, le pare-feu et SSH reviennent à l'état précédent." \
+			"Without an answer, the firewall and SSH go back to their previous state."
+		echo
+		v=""
+		read -r -t 120 -p "> " v || true
+		if [ "${v^^}" != OK ]; then
+			cp -p "$conf_prev" "$CONF"
+			if [ -n "$sshd_prev" ]; then cp -p "$sshd_prev" "$SSHD"; else rm -f "$SSHD"; fi
+			systemctl reload-or-restart ssh.service || true
+			if [ -n "$fw_prev" ]; then
+				cp -p "$fw_prev" "$FW"
+				systemctl restart "$FWSVC" || true
+			else
+				systemctl disable --now "$FWSVC" >/dev/null 2>&1 || true
+				rm -f "$FW"
+			fi
+			die "$(t "pas de confirmation : pare-feu, SSH et relay.conf restaurés (un mot de passe changé reste changé)." "no confirmation: firewall, SSH and relay.conf restored (a changed password stays changed).")"
+		fi
+	fi
+	rm -f "$conf_prev" "$fw_prev" "$sshd_prev"
+
+	touch "$DONE"
+	restart_relay
+	echo
+	info
+}
+
+# ---------- sous-commandes ----------
+
+info() {
+	need_root
+	echo "$(t "Relais Paranoid" "Paranoid relay") $(/usr/bin/relayd -version 2>/dev/null || true)"
+	echo "URL       : $(url)"
+	echo "$(t "Empreinte" "Fingerprint") : $(fingerprint)"
+	if ! systemctl is-active --quiet "$SVC" 2>/dev/null; then
+		echo
+		t "Attention : le relais n'est pas démarré (paranoid-relay status)." "Warning: the relay is not running (paranoid-relay status)."
+		echo
+	fi
+}
+
+status() {
+	need_root
+	local s
+	s=$(systemctl is-active "$SVC" 2>/dev/null || true)
+	echo "$(t "Relais" "Relay")      : $s ($SVC), port ${PORT:-?}"
+	s=$(nft list table inet paranoid_relay >/dev/null 2>&1 && t "table chargée" "table loaded" || t "aucune table" "no table")
+	echo "$(t "Pare-feu" "Firewall")    : ${FIREWALL:-?}, $s"
+	echo "SSH         : ${SSH_MODE:-?}${SSH_USER:+ ($SSH_USER)}, $(systemctl is-active ssh.service 2>/dev/null || true)"
+	echo "$(t "Base" "Database")        : $(du -sh "$DBDIR" 2>/dev/null | cut -f1 || echo ?), max ${MAX_DB:-?}"
+	echo "$(t "Disque libre" "Free disk") : $(df -h --output=avail "$(dirname "$DBDIR")" | tail -1 | tr -d ' '), min ${MIN_FREE:-?}"
+	[ -f "$DONE" ] || { echo; t "Pas encore configuré : paranoid-relay config" "Not configured yet: paranoid-relay config"; echo; }
+}
+
+apply() {
+	need_root
+	ensure_conf
+	load
+	apply_firewall
+	[ -f "$DONE" ] && restart_relay
+	return 0
+}
+
+in_use() { # un processus a-t-il ce fichier ouvert ?
+	local f
+	f=$(readlink -f "$1")
+	[ -n "$(find /proc/[0-9]*/fd -lname "$f" 2>/dev/null | head -1)" ]
+}
+
+import() {
+	need_root
+	[ $# -ge 2 ] || die "usage : paranoid-relay import CERT.crt CLÉ.key [BASE.db]"
+	local crt=$1 key=$2 db=${3:-}
+	[ -f "$crt" ] && [ -f "$key" ] || die "$(t "fichier introuvable" "file not found")"
+	[ "$(openssl x509 -in "$crt" -noout -pubkey)" = "$(openssl pkey -in "$key" -pubout)" ] ||
+		die "$(t "la clé ne correspond pas au certificat" "the key does not match the certificate")"
+	if [ -n "$db" ]; then
+		[ -f "$db" ] || die "$(t "base introuvable : $db" "database not found: $db")"
+		in_use "$db" && die "$(t "$db est ouvert par un processus : arrêtez d'abord l'ancien relais" "$db is open by a process: stop the old relay first")"
+	fi
+	systemctl stop "$SVC" 2>/dev/null || true
+	install -o root -g root -m 0644 "$crt" "$CRT"
+	install -o root -g paranoid-relay -m 0640 "$key" "$KEY"
+	if [ -n "$db" ]; then
+		install -d -o paranoid-relay -g paranoid-relay -m 0700 "$DBDIR"
+		rm -f "$DB" "$DB-wal" "$DB-shm"
+		install -o paranoid-relay -g paranoid-relay -m 0600 "$db" "$DB"
+		for v in wal shm; do
+			[ -f "$db-$v" ] && install -o paranoid-relay -g paranoid-relay -m 0600 "$db-$v" "$DB-$v"
+		done
+	fi
+	echo "$(t "Importé. Empreinte" "Imported. Fingerprint") : $(fingerprint)"
+	if [ -f "$DONE" ]; then restart_relay; else t "Étape suivante : paranoid-relay config" "Next step: paranoid-relay config"; echo; fi
+}
+
+newcert() {
+	need_root
+	local v
+	echo "$(t "Empreinte actuelle" "Current fingerprint") : $(fingerprint)"
+	t "Un nouveau certificat change l'empreinte : chaque utilisateur devra changer de relais dans l'appli." \
+		"A new certificate changes the fingerprint: every user will have to change relay in the app."
+	echo
+	read -r -p "$(t "Tapez NOUVEAU pour confirmer : " "Type NEW to confirm: ")" v
+	[ "$v" = "$(t NOUVEAU NEW)" ] || die "$(t "annulé" "cancelled")"
+	gen_cert
+	echo "$(t "Nouvelle empreinte" "New fingerprint") : $(fingerprint)"
+	[ -f "$DONE" ] && restart_relay
+	return 0
+}
+
+usage() {
+	cat <<EOF
+paranoid-relay config                     $(t "assistant de configuration" "configuration wizard")
+paranoid-relay info                       $(t "URL et empreinte à donner aux utilisateurs" "URL and fingerprint to give to users")
+paranoid-relay status                     $(t "état du relais, du pare-feu et de la base" "relay, firewall and database status")
+paranoid-relay apply                      $(t "réappliquer $CONF" "re-apply $CONF")
+paranoid-relay import CRT KEY [DB]        $(t "reprendre le certificat (et la base) d'un relais existant" "take over the certificate (and database) of an existing relay")
+paranoid-relay newcert                    $(t "nouveau certificat (change l'empreinte)" "new certificate (changes the fingerprint)")
+EOF
+}
+
+case ${1:-} in
+config) wizard ;;
+info) info ;;
+status) status ;;
+apply) apply ;;
+import) shift; import "$@" ;;
+newcert) newcert ;;
+gen-cert-if-missing) need_root; [ -f "$CRT" ] && [ -f "$KEY" ] || gen_cert ;;
+*) usage ;;
+esac

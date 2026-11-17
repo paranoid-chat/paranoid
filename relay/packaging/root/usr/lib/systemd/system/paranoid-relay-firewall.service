@@ -1,0 +1,21 @@
+[Unit]
+Description=Pare-feu du relais Paranoid (table nftables inet paranoid_relay)
+Documentation=https://getparanoid.fr
+# Si nftables.service recharge /etc/nftables.conf (qui commence souvent par
+# « flush ruleset »), la table du relais est rechargée juste après.
+After=nftables.service
+PartOf=nftables.service
+ReloadPropagatedFrom=nftables.service
+Before=network-pre.target paranoid-relay.service
+Wants=network-pre.target
+ConditionPathExists=/etc/paranoid-relay/firewall.nft
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/paranoid-relay/firewall.nft
+ExecReload=/usr/sbin/nft -f /etc/paranoid-relay/firewall.nft
+ExecStop=-/usr/sbin/nft delete table inet paranoid_relay
+
+[Install]
+WantedBy=multi-user.target

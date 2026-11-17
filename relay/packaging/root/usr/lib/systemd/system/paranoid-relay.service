@@ -1,0 +1,51 @@
+[Unit]
+Description=Relais Paranoid
+Documentation=https://getparanoid.fr
+After=network-online.target paranoid-relay-firewall.service
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=/etc/paranoid-relay/relay.conf
+ExecStart=/usr/bin/relayd --listen :${PORT} --cert /etc/paranoid-relay/relay.crt --key /etc/paranoid-relay/relay.key --db /var/lib/paranoid-relay/relay.db --max-db ${MAX_DB} --min-free ${MIN_FREE}
+User=paranoid-relay
+Group=paranoid-relay
+StateDirectory=paranoid-relay
+StateDirectoryMode=0700
+UMask=0077
+Restart=on-failure
+RestartSec=3
+
+# Port < 1024 possible sans root (443 par exemple), et rien d'autre.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=yes
+
+# Système de fichiers : tout en lecture seule sauf /var/lib/paranoid-relay.
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+
+# Noyau : seulement ce dont un service réseau a besoin.
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

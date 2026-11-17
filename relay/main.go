@@ -18,6 +18,9 @@ import (
 	"time"
 )
 
+// version est fixée à la compilation : -ldflags "-X main.version=1.0.0".
+var version = "dev"
+
 func fingerprint(der []byte) string {
 	sum := sha256.Sum256(der)
 	parts := make([]string, len(sum))
@@ -74,7 +77,12 @@ func main() {
 	cfg := DefaultConfig()
 	flag.Func("max-db", "taille maximale occupée dans la base, ex. 1G, 512M (0 = sans limite ; défaut 1G)", sizeFlag(&cfg.MaxDB))
 	flag.Func("min-free", "espace disque à laisser libre, ex. 2G (0 = sans limite ; défaut 2G)", sizeFlag(&cfg.MinFree))
+	showVersion := flag.Bool("version", false, "affiche la version et quitte")
 	flag.Parse()
+	if *showVersion {
+		fmt.Println(version)
+		return
+	}
 
 	store, err := OpenStore(*dbPath)
 	if err != nil {

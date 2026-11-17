@@ -37,16 +37,25 @@ jobs:
           go vet ./...
           go test -count=1 ./...
 
-      - name: Binaires Linux statiques
+      - name: Vérification des scripts du paquet
+        run: |
+          shellcheck -s bash -S warning packaging/root/usr/sbin/paranoid-relay
+          shellcheck -s sh -S warning packaging/build-deb.sh packaging/debian/postinst packaging/debian/prerm packaging/debian/postrm
+
+      - name: Binaires Linux statiques et paquets .deb
         env:
           CGO_ENABLED: "0"
         run: |
           mkdir -p dist
+          version=$(cat packaging/VERSION)
           for arch in amd64 arm64; do
-            GOOS=linux GOARCH=$arch go build -trimpath -ldflags "-s -w" -o dist/relayd-linux-$arch .
+            GOOS=linux GOARCH=$arch go build -trimpath -ldflags "-s -w -X main.version=$version" -o dist/relayd-linux-$arch .
             GOOS=linux GOARCH=$arch go build -trimpath -ldflags "-s -w" -o dist/relaycli-linux-$arch ./cmd/relaycli
           done
           GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o dist/relaycli-windows-amd64.exe ./cmd/relaycli
+          for arch in amd64 arm64; do
+            packaging/build-deb.sh $arch dist/relayd-linux-$arch dist
+          done
           (cd dist && sha256sum * > SHA256SUMS)
 
       - uses: actions/upload-artifact@v4
