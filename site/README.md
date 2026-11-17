@@ -5,9 +5,10 @@ Fichiers PHP à intégrer au site getparanoid.fr (hébergement mutualisé OVH, P
 | Fichier | Rôle |
 |---|---|
 | `www/api/relay-announce.php` | Reçoit les signaux `POST` envoyés par `paranoid-relay announce` |
-| `www/inc/relays.php` | Vérification, stockage, rendu du tableau (`relays_render(false)` en français, `true` en anglais) |
+| `www/inc/relays.php` | Vérification, stockage, rendu du tableau (`relays_render(false)` en français, `true` en anglais ; sur mobile, une fiche par relais via `data-label`) |
 | `www/inc/.htaccess` | `Require all denied` : la bibliothèque n'est pas servie |
-| `www/relais.php`, `www/en/relays.php` | Pages « Relais » / « Relays » : texte + tableau. En-tête, pied et menu à reprendre du gabarit de `build.py` |
+
+Intégration au site : ces fichiers vont dans `source/static/` du site (copiés tels quels par `build.py`). Les pages `relais.php` et `en/relays.php` sont générées par `page_relays()` de `build.py` (gabarit du site, entrée « Relais » du menu), et le style est dans `source/style.css` (section « Relais »).
 
 Données : `paranoid-data/relays.json`, **hors de `www/`** (à la racine FTP, créé par PHP au premier signal). Si l'hébergement refuse d'écrire hors de `www/`, changer `RELAYS_DATA` dans `inc/relays.php` vers un dossier sous `www/` protégé par un `.htaccess` `Require all denied`.
 

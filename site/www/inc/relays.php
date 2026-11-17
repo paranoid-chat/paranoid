@@ -216,30 +216,33 @@ function relays_render(bool $en): string
     if (!$list) {
         return '<p>' . ($en ? 'No relay has announced itself yet.' : "Aucun relais ne s'est encore annoncé.") . '</p>';
     }
-    $h = '<div class="relays"><table class="relays-table"><thead><tr>'
-        . '<th>' . ($en ? 'Name' : 'Nom') . '</th>'
-        . '<th>' . ($en ? 'Address (in the app)' : "Adresse (dans l'appli)") . '</th>'
-        . '<th>IP</th>'
-        . '<th>' . ($en ? 'SHA-256 fingerprint' : 'Empreinte SHA-256') . '</th>'
-        . '<th>Version</th>'
-        . '<th>' . ($en ? 'Last signal' : 'Dernier signal') . '</th>'
-        . '<th>' . ($en ? 'Status' : 'État') . '</th>'
-        . '</tr></thead><tbody>';
+    $L = $en
+        ? ['Name', 'Address (in the app)', 'IP', 'SHA-256 fingerprint', 'Version', 'Last signal', 'Status']
+        : ['Nom', "Adresse (dans l'appli)", 'IP', 'Empreinte SHA-256', 'Version', 'Dernier signal', 'État'];
+    $h = '<div class="table-scroll"><table class="relays-table"><thead><tr>';
+    foreach ($L as $l) {
+        $h .= '<th>' . $e($l) . '</th>';
+    }
+    $h .= '</tr></thead><tbody>';
     foreach ($list as $r) {
-        $host = $r['host'];
-        $url = 'https://' . $host . ($r['port'] === 443 ? '' : ':' . $r['port']);
+        $url = 'https://' . $r['host'] . ($r['port'] === 443 ? '' : ':' . $r['port']);
         $fp = $r['fp'];
         $when = gmdate('Y-m-d H:i', $r['last_seen']) . ' UTC';
-        $h .= '<tr>'
-            . '<td>' . $e($r['name']) . '</td>'
-            . '<td><code>' . $e($url) . '</code></td>'
-            . '<td><code>' . $e($r['ip']) . '</code></td>'
-            . '<td><code class="fp">' . $e(substr($fp, 0, 47)) . '<br>' . $e(substr($fp, 48)) . '</code></td>'
-            . '<td>' . $e($r['version']) . '</td>'
-            . '<td><time datetime="' . gmdate('c', $r['last_seen']) . '" title="' . $when . '">'
-            . $e(relays_ago($now - $r['last_seen'], $en)) . '</time></td>'
-            . '<td class="' . ($r['online'] ? 'relay-up">' . ($en ? 'Online' : 'En ligne') : 'relay-down">' . ($en ? 'Offline' : 'Hors ligne')) . '</td>'
-            . '</tr>';
+        $cells = [
+            $e($r['name']),
+            '<code>' . $e($url) . '</code>',
+            '<code>' . $e($r['ip']) . '</code>',
+            '<code class="fp">' . $e(substr($fp, 0, 47)) . '<br>' . $e(substr($fp, 48)) . '</code>',
+            $e($r['version']),
+            '<time datetime="' . gmdate('c', $r['last_seen']) . '" title="' . $when . '">' . $e(relays_ago($now - $r['last_seen'], $en)) . '</time>',
+            $r['online'] ? '<span class="relay-up">' . ($en ? 'Online' : 'En ligne') . '</span>'
+                         : '<span class="relay-down">' . ($en ? 'Offline' : 'Hors ligne') . '</span>',
+        ];
+        $h .= '<tr>';
+        foreach ($cells as $i => $c) {
+            $h .= '<td data-label="' . $e($L[$i]) . '">' . $c . '</td>';
+        }
+        $h .= '</tr>';
     }
     return $h . '</tbody></table></div>';
 }
