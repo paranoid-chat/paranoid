@@ -187,11 +187,11 @@ Le relais est installé par le paquet `paranoid-relay` (détails dans `relay/REA
 1. Télécharge `relais-binaires` depuis la dernière exécution **Relais**.
 2. Copie le paquet sur la VM (OpenSSH est inclus dans Windows) :
    ```powershell
-   scp .\paranoid-relay_1.1.1_amd64.deb <utilisateur>@192.168.1.252:/tmp/
+   scp .\paranoid-relay_1.1.2_amd64.deb <utilisateur>@192.168.1.252:/tmp/
    ```
 3. Installe-le sur la VM, en `su -` (configuration, clé et base sont gardées, le relais redémarre) :
    ```bash
-   apt install /tmp/paranoid-relay_1.1.1_amd64.deb
+   apt install /tmp/paranoid-relay_1.1.2_amd64.deb
    paranoid-relay status
    ```
 

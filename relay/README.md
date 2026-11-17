@@ -30,7 +30,7 @@ La CI construit `paranoid-relay_VERSION_amd64.deb` et `_arm64.deb` (artefact « 
 Installation et configuration, en root :
 
 ```bash
-apt install ./paranoid-relay_1.1.1_amd64.deb
+apt install ./paranoid-relay_1.1.2_amd64.deb
 paranoid-relay config
 ```
 
@@ -39,7 +39,7 @@ L'assistant (français ou anglais) demande le port local, l'adresse et le port p
 - **Pare-feu** : `ratelimit` limite seulement le port du relais (10 nouvelles connexions/s, 32 simultanées par IP), `full` bloque aussi tout le reste sauf SSH, `off` ne charge aucune règle.
 - **SSH** : `keep` ne touche à rien ; `key` (clé uniquement) et `password` (mot de passe de 14 caractères minimum, 3 types de caractères) écrivent `/etc/ssh/sshd_config.d/00-paranoid-relay.conf` : root interdit, un seul compte autorisé, 3 essais par connexion, 30 s pour s'authentifier, pas de redirections. Le pare-feu bloque 15 minutes une IP qui ouvre plus de 4 connexions SSH par minute. `off` désactive SSH (refusé si l'assistant tourne en SSH).
 - **Retour arrière** : lancé en SSH, l'assistant demande d'ouvrir une nouvelle connexion puis de taper `OK` dans les 120 s ; sans réponse, `relay.conf`, le pare-feu et SSH reviennent à leur état précédent.
-- **Annuaire public** : l'assistant propose (Oui par défaut sur une nouvelle installation, Non pour un relais mis à jour depuis 1.0.0) de publier le relais sur getparanoid.fr, avec un nom au choix. Sont publiés : nom, adresse et port publics, IP d'envoi, empreinte, version, heure du dernier signal. Le signal est signé par la clé TLS du relais ; le site vérifie la signature et que l'adresse publique correspond à l'IP d'envoi (détails dans `../site/README.md`). Répondre Non retire le relais de l'annuaire. `relayd` lui-même ne fait toujours aucune requête sortante.
+- **Annuaire public** : l'assistant propose (Oui par défaut sur une nouvelle installation, Non pour un relais mis à jour depuis 1.0.0) de publier le relais sur getparanoid.fr, avec un nom au choix. Sont publiés : nom, adresse et port publics, IP d'envoi, empreinte, version, heure du dernier signal. Le signal est signé par la clé TLS du relais ; le site vérifie la signature et que l'adresse publique correspond à l'IP d'envoi (détails dans `../site/README.md`). À la fin de l'assistant, le premier signal part tout de suite et le résultat s'affiche (« enregistré : … » ou l'erreur) ; ensuite, le timer l'envoie toutes les heures sans intervention. Répondre Non retire le relais de l'annuaire. `relayd` lui-même ne fait toujours aucune requête sortante.
 - `apt remove` retire le relais de l'annuaire, l'arrête et garde clé et base ; `apt purge` les efface (l'empreinte est perdue).
 
 ## Compiler à la main (sur ton PC)

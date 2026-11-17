@@ -257,10 +257,21 @@ announce() {
 		--data-urlencode "ts=$ts" --data-urlencode "cert@$CRT" --data-urlencode "sig=$sig" "$url"
 }
 
+# apply_announce [wait] : timer selon ANNOUNCE ; avec wait, premier signal envoyé
+# tout de suite par le service lui-même (même bac à sable que le timer) et résultat affiché.
 apply_announce() {
 	if [ "$ANNOUNCE" = yes ] && [ -f "$DONE" ]; then
 		systemctl enable --now "$ANNSVC.timer" >/dev/null 2>&1
-		systemctl start --no-block "$ANNSVC.service" || true
+		if [ "${1:-}" != wait ]; then
+			systemctl start --no-block "$ANNSVC.service" || true
+		elif systemctl start "$ANNSVC.service"; then
+			echo "$(t "Annuaire" "Directory") : $(journalctl -u "$ANNSVC.service" -n 1 -o cat --no-pager 2>/dev/null)"
+		else
+			t "Annuaire : échec du signal, détail ci-dessous (nouvel essai automatique dans l'heure)." \
+				"Directory: the signal failed, details below (automatic retry within the hour)."
+			echo
+			journalctl -u "$ANNSVC.service" -n 5 -o cat --no-pager 2>/dev/null || true
+		fi
 	else
 		systemctl disable --now "$ANNSVC.timer" >/dev/null 2>&1 || true
 	fi
@@ -451,7 +462,7 @@ $(t "Appliquer cette configuration ?" "Apply this configuration?")"
 		echo
 		runuser -u paranoid-relay -- /usr/sbin/paranoid-relay announce remove || true
 	fi
-	apply_announce
+	apply_announce wait
 	echo
 	info
 }
