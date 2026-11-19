@@ -225,6 +225,7 @@ fun ContactsScreen(ui: Ui, vm: MainViewModel) {
                         DropdownMenuItem(text = { Text(tr("Paramètres", "Settings")) }, onClick = { menu = false; vm.goSettings() })
                         DropdownMenuItem(text = { Text(tr("Comprendre Paranoid", "Understanding Paranoid")) }, onClick = { menu = false; vm.goLearn() })
                         DropdownMenuItem(text = { Text(tr("Mes infos en direct", "My live info")) }, onClick = { menu = false; vm.goMyInfo() })
+                        DropdownMenuItem(text = { Text("Donation") }, onClick = { menu = false; vm.goDonation() })
                     }
                 },
             )
@@ -594,9 +595,16 @@ fun ChangeCodesScreen(ui: Ui, vm: MainViewModel) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChangeRelayScreen(ui: Ui, vm: MainViewModel) {
+    var pick by remember { mutableStateOf<RelayRow?>(null) }
     var url by rememberSaveable { mutableStateOf("") }
     var fp by rememberSaveable { mutableStateOf("") }
     var cur by remember { mutableStateOf("") }
+    // Empreinte lue sur le relais privé : reportée dans le champ si l'adresse n'a pas changé entre-temps.
+    LaunchedEffect(ui.probedFp, ui.probedUrl) {
+        if (ui.probedFp != null && ui.probedUrl == url.trim().trimEnd('/')) fp = ui.probedFp
+    }
+    val targetUrl = pick?.url ?: url
+    val targetFp = pick?.fp ?: fp
     Scaffold(
         topBar = {
             TopAppBar(
@@ -628,19 +636,108 @@ fun ChangeRelayScreen(ui: Ui, vm: MainViewModel) {
                 }
             }
             Text(tr("Relais actuel : ${ui.relayUrl}", "Current relay: ${ui.relayUrl}"), style = MaterialTheme.typography.bodySmall)
-            OutlinedTextField(url, { url = it }, label = { Text(tr("Nouveau relais (https://…)", "New relay (https://…)")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(fp, { fp = it }, label = { Text(tr("Empreinte SHA-256 du nouveau relais", "New relay SHA-256 fingerprint")) },
+
+            // ---------- relais publics ----------
+            Text(tr("Relais publics", "Public relays"), style = MaterialTheme.typography.titleMedium)
+            Text(tr("Relais publiés dans l'annuaire de getparanoid.fr par leur opérateur. Afficher la liste contacte getparanoid.fr, qui voit alors l'adresse IP du téléphone.",
+                "Relays published by their operator in the getparanoid.fr directory. Showing the list contacts getparanoid.fr, which then sees the phone's IP address."),
+                style = MaterialTheme.typography.bodySmall)
+            val dir = ui.directory
+            if (dir == null) {
+                OutlinedButton(onClick = { vm.loadDirectory() }, enabled = !ui.busy, modifier = Modifier.fillMaxWidth()) {
+                    Text(tr("Afficher les relais publics", "Show public relays"))
+                }
+            } else {
+                if (dir.isEmpty()) Text(tr("Aucun relais publié pour le moment.", "No relay published yet."))
+                dir.forEach { r ->
+                    val current = r.url == ui.relayUrl.trimEnd('/') && r.fp == ui.relayFp
+                    RelayCard(r, selected = pick?.url == r.url && pick?.fp == r.fp, current = current) {
+                        pick = r; url = ""; fp = ""
+                    }
+                }
+                TextButton(onClick = { pick = null; vm.loadDirectory() }, enabled = !ui.busy) { Text(tr("Actualiser la liste", "Refresh the list")) }
+            }
+            HorizontalDivider()
+
+            // ---------- relais privé ----------
+            Text(tr("Relais privé", "Private relay"), style = MaterialTheme.typography.titleMedium)
+            OutlinedTextField(url, { url = it; pick = null; fp = "" }, label = { Text(tr("Adresse du relais (https://…)", "Relay address (https://…)")) },
+                singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(fp, { fp = it; pick = null }, label = { Text(tr("Empreinte SHA-256 (facultative)", "SHA-256 fingerprint (optional)")) },
                 modifier = Modifier.fillMaxWidth(), textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace))
+            if (fp.isBlank()) {
+                OutlinedButton(onClick = { vm.probeRelay(url) }, enabled = url.trim().startsWith("https://") && !ui.busy, modifier = Modifier.fillMaxWidth()) {
+                    Text(tr("Lire l'empreinte présentée par le relais", "Read the fingerprint presented by the relay"))
+                }
+                Text(tr("Sans empreinte saisie, l'appli lit celle que présente le relais et l'affiche ici. Si possible, comparez-la avec celle que donne son opérateur (paranoid-relay info) : c'est elle qui sera épinglée.",
+                    "Without a fingerprint, the app reads the one the relay presents and shows it here. If possible, compare it with the one its operator gives (paranoid-relay info): it is the one that will be pinned."),
+                    style = MaterialTheme.typography.bodySmall)
+            } else if (ui.probedFp != null && fp == ui.probedFp) {
+                Text(tr("Empreinte lue sur le relais : à vérifier avec son opérateur si possible.", "Fingerprint read from the relay: check it with its operator if possible."),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            }
+            HorizontalDivider()
+
+            // ---------- validation ----------
+            Text(
+                when {
+                    pick != null -> tr("Nouveau relais : ${pick!!.name} (${pick!!.url})", "New relay: ${pick!!.name} (${pick!!.url})")
+                    url.isNotBlank() -> tr("Nouveau relais : ${url.trim()}", "New relay: ${url.trim()}")
+                    else -> tr("Choisir un relais public ou saisir un relais privé.", "Pick a public relay or enter a private one.")
+                },
+                style = MaterialTheme.typography.bodyMedium,
+            )
             Text(tr("Le nouveau relais est testé (connexion et empreinte) avant que quoi que ce soit ne soit effacé.", "The new relay is tested (connection and fingerprint) before anything is erased."),
                 style = MaterialTheme.typography.bodySmall)
             CodeField(cur, { cur = it }, tr("Code actuel", "Current code"))
             Button(
-                onClick = { vm.changeRelay(cur, url, fp); cur = "" },
-                enabled = cur.isNotEmpty() && url.isNotBlank() && fp.isNotBlank() && !ui.busy,
+                onClick = { vm.changeRelay(cur, targetUrl, targetFp); cur = "" },
+                enabled = cur.isNotEmpty() && targetUrl.isNotBlank() && targetFp.isNotBlank() && !ui.busy,
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text(if (ui.busy) tr("Test du relais, envoi des alertes…", "Testing the relay, sending alerts…") else tr("Tout effacer et changer de relais", "Erase everything and change relay")) }
+            ) { Text(if (ui.busy) tr("Patienter…", "Please wait…") else tr("Tout effacer et changer de relais", "Erase everything and change relay")) }
         }
     }
     Messages(ui, vm)
+}
+
+@Composable
+private fun RelayCard(r: RelayRow, selected: Boolean, current: Boolean, onPick: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    Surface(
+        color = if (selected) colors.primaryContainer else colors.surfaceVariant,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth().clickable(enabled = !current, onClick = onPick),
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(r.name, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                Text(
+                    when {
+                        current -> tr("Relais actuel", "Current relay")
+                        r.online -> tr("En ligne", "Online")
+                        else -> tr("Hors ligne", "Offline")
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (r.online && !current) colors.primary else colors.onSurfaceVariant,
+                )
+            }
+            Text(r.url, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace))
+            Text(tr("Version ${r.version} · dernier signal ${ago(r.lastSeen)}", "Version ${r.version} · last signal ${ago(r.lastSeen)}"),
+                style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+            if (selected) {
+                Text(tr("Empreinte : ${r.fp}", "Fingerprint: ${r.fp}"), style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace))
+            }
+        }
+    }
+}
+
+private fun ago(lastSeen: Long): String {
+    val s = (System.currentTimeMillis() / 1000 - lastSeen).coerceAtLeast(0)
+    return when {
+        s < 120 -> tr("à l'instant", "just now")
+        s < 7200 -> tr("il y a ${s / 60} min", "${s / 60} min ago")
+        s < 172800 -> tr("il y a ${s / 3600} h", "${s / 3600} h ago")
+        else -> tr("il y a ${s / 86400} jours", "${s / 86400} days ago")
+    }
 }

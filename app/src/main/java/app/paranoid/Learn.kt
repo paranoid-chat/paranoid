@@ -634,11 +634,19 @@ private val TOPICS: List<Topic> get() = listOf(
                 "and pairing redone with each contact.",
         ),
         tech = tr(
-            "Le code actuel est exigé ; le code de destruction y a le même effet qu'au déverrouillage. Le test vérifie la connexion TLS et " +
+            "Le nouveau relais se choisit dans l'annuaire public de getparanoid.fr (adresse et empreinte reprises de la liste, chargée " +
+                "à la demande en HTTPS classique), ou se saisit à la main. Pour un relais privé sans empreinte saisie, l'appli lit le " +
+                "certificat présenté par le relais et affiche son empreinte avant de l'épingler : à comparer si possible avec " +
+                "« paranoid-relay info » chez l'opérateur, car un intermédiaire pourrait présenter la sienne à ce premier contact.\n\n" +
+                "Le code actuel est exigé ; le code de destruction y a le même effet qu'au déverrouillage. Le test vérifie la connexion TLS et " +
                 "l'empreinte du certificat du nouveau relais : en cas d'échec, rien n'est effacé.\n\n" +
                 "L'alerte est un message chiffré de type 3, envoyé par la session en cours, 5 s au maximum. Chez le contact, la conversation " +
                 "se ferme. Les anciennes boîtes ne sont plus relevées, et l'ancien relais les supprime au bout de 90 jours.",
-            "The current code is required; the destruction code has the same effect there as when unlocking. The test checks the TLS connection and " +
+            "The new relay is picked from the getparanoid.fr public directory (address and fingerprint taken from the list, loaded " +
+                "on demand over regular HTTPS), or entered by hand. For a private relay without a fingerprint, the app reads the " +
+                "certificate the relay presents and shows its fingerprint before pinning it: compare it if possible with " +
+                "“paranoid-relay info” at the operator, because an intermediary could present its own at this first contact.\n\n" +
+                "The current code is required; the destruction code has the same effect there as when unlocking. The test checks the TLS connection and " +
                 "the certificate fingerprint of the new relay: if it fails, nothing is erased.\n\n" +
                 "The alert is an encrypted type 3 message, sent through the current session, 5 s at most. On the contact's phone, the conversation " +
                 "closes. The old boxes are no longer fetched, and the old relay deletes them after 90 days.",

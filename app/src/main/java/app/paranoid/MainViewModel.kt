@@ -9,6 +9,7 @@ import app.paranoid.core.LockBox
 import app.paranoid.core.MAX_TEXT
 import app.paranoid.core.MessageStatus
 import app.paranoid.core.Messenger
+import app.paranoid.core.RelayDirectory
 import app.paranoid.core.RelayRef
 import app.paranoid.core.TYPE_RELAY_CHANGE
 import app.paranoid.core.formatFingerprint
@@ -37,6 +38,7 @@ sealed interface Screen {
     data object Learn : Screen
     data object Settings : Screen
     data object MyInfo : Screen
+    data object Donation : Screen
     data object Locked : Screen
     data object Contacts : Screen
     data object AddContact : Screen
@@ -55,6 +57,9 @@ data class ContactRow(
 
 data class MessageRow(val key: String, val outgoing: Boolean, val text: String, val ts: Long, val status: MessageStatus)
 
+/** Relais de l'annuaire public, tel qu'affiché dans « Changer de relais ». */
+data class RelayRow(val name: String, val url: String, val fp: String, val version: String, val lastSeen: Long, val online: Boolean)
+
 data class AddFlow(val name: String = "", val invite: String? = null)
 
 data class Ui(
@@ -70,6 +75,11 @@ data class Ui(
     val error: String? = null,
     val info: String? = null,
     val connectionError: String? = null,
+    /** Annuaire public : null = pas encore chargé (aucune requête vers getparanoid.fr avant le bouton). */
+    val directory: List<RelayRow>? = null,
+    /** Empreinte lue sur un relais privé, pour l'adresse [probedUrl]. */
+    val probedUrl: String? = null,
+    val probedFp: String? = null,
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -280,7 +290,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         refresh()
     }
 
-    fun goChangeRelay() = _ui.update { it.copy(screen = Screen.ChangeRelay, error = null, info = null) }
+    fun goChangeRelay() = _ui.update { it.copy(screen = Screen.ChangeRelay, error = null, info = null, directory = null, probedUrl = null, probedFp = null) }
+
+    fun goDonation() = _ui.update { it.copy(screen = Screen.Donation, error = null, info = null) }
+
+    /** Charge l'annuaire public de getparanoid.fr (à la demande seulement). */
+    fun loadDirectory() = action {
+        val list = RelayDirectory.fetch().map {
+            RelayRow(it.name, it.url, formatFingerprint(it.fp), it.version, it.lastSeen, it.online)
+        }
+        _ui.update { it.copy(directory = list) }
+    }
+
+    /** Lit l'empreinte présentée par un relais privé ; elle s'affiche pour être vérifiée avant l'épinglage. */
+    fun probeRelay(url: String) = action {
+        val u = url.trim().trimEnd('/')
+        val fp = formatFingerprint(RelayDirectory.probeFingerprint(u))
+        _ui.update { it.copy(probedUrl = u, probedFp = fp) }
+    }
 
     fun keyProtection(): String = runCatching { store.keyProtection() }.getOrDefault(tr("Inconnue", "Unknown"))
 

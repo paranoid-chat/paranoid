@@ -5,6 +5,7 @@ Fichiers PHP à intégrer au site getparanoid.fr (hébergement mutualisé OVH, P
 | Fichier | Rôle |
 |---|---|
 | `www/api/relay-announce.php` | Reçoit les signaux `POST` envoyés par `paranoid-relay announce` |
+| `www/api/relays.php` | Annuaire en JSON pour l'appli (`{"v":1,"relays":[{name, url, fp, version, last_seen, online}]}`), sans les IP |
 | `www/inc/relays.php` | Vérification, stockage, rendu du tableau (`relays_render(false)` en français, `true` en anglais ; sur mobile, une fiche par relais via `data-label`) |
 | `www/inc/.htaccess` | `Require all denied` : la bibliothèque n'est pas servie |
 

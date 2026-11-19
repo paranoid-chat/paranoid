@@ -83,18 +83,6 @@ class RelayClient(private val ref: RelayRef, private val timeoutMs: Int = 20_000
         }
     }
 
-    private fun readLimited(input: InputStream, max: Int): ByteArray {
-        val out = ByteArrayOutputStream()
-        val buf = ByteArray(8192)
-        while (true) {
-            val n = input.read(buf)
-            if (n < 0) break
-            out.write(buf, 0, n)
-            if (out.size() > max) throw RelayException(tr("réponse du relais trop grande", "relay response too large"))
-        }
-        return out.toByteArray()
-    }
-
     private fun fail(r: Response): Nothing {
         if (r.full) throw RelayFullException()
         if (r.code == 429) throw RelayException(tr("relais : trop de requêtes, nouvel essai possible dans ${r.retryAfter} s", "relay: too many requests, retry in ${r.retryAfter} s"), 429)
@@ -150,4 +138,16 @@ class RelayClient(private val ref: RelayRef, private val timeoutMs: Int = 20_000
         val r = request("DELETE", "/v1/box/${b64(boxId)}", null, readSeed)
         if (r.code != 204 && r.code != 404) fail(r)
     }
+}
+
+internal fun readLimited(input: InputStream, max: Int): ByteArray {
+    val out = ByteArrayOutputStream()
+    val buf = ByteArray(8192)
+    while (true) {
+        val n = input.read(buf)
+        if (n < 0) break
+        out.write(buf, 0, n)
+        if (out.size() > max) throw RelayException(tr("réponse trop grande", "response too large"))
+    }
+    return out.toByteArray()
 }

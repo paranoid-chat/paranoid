@@ -396,3 +396,32 @@ class HistoryTest {
         assertEquals(3 * 86_400L, AppState.decode(st.encode()).historySeconds)
     }
 }
+
+class DirectoryTest {
+    private val fpA = "FB:2B:01:81:C4:A7:E4:EA:3C:C9:DE:31:EA:A4:96:5A:D4:7E:C0:D6:F6:B7:4B:91:4F:DD:FB:FC:89:C6:B0:EA"
+
+    @Test
+    fun parseKeepsValidEntriesOnlineFirst() {
+        val json = """{"v":1,"relays":[
+            {"name":"vieux","url":"https://203.0.113.5","fp":"$fpA","version":"1.1.2","last_seen":100,"online":false},
+            {"name":"nom invalide","url":"https://x.example","fp":"$fpA","version":"1","last_seen":1,"online":true},
+            {"name":"http","url":"http://x.example","fp":"$fpA","version":"1","last_seen":1,"online":true},
+            {"name":"court","url":"https://x.example","fp":"FB:2B","version":"1","last_seen":1,"online":true},
+            {"name":"chemin","url":"https://x.example/api","fp":"$fpA","version":"1","last_seen":1,"online":true},
+            {"name":"neuf","url":"https://relay.example.org:8443","fp":"${fpA.replace(":", "").lowercase()}","version":"1.1.2","last_seen":200,"online":true}]}"""
+        val l = RelayDirectory.parse(json)
+        assertEquals(listOf("neuf", "vieux"), l.map { it.name })
+        assertTrue(l[0].online)
+        assertEquals(fpA, formatFingerprint(l[0].fp))
+        assertEquals("https://relay.example.org:8443", l[0].url)
+    }
+
+    @Test
+    fun parseRejectsUnknownVersion() {
+        try {
+            RelayDirectory.parse("""{"v":2,"relays":[]}""")
+            fail("version 2 acceptée")
+        } catch (_: IllegalArgumentException) {
+        }
+    }
+}
