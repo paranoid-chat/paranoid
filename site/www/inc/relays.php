@@ -217,8 +217,8 @@ function relays_render(bool $en): string
         return '<p>' . ($en ? 'No relay has announced itself yet.' : "Aucun relais ne s'est encore annoncé.") . '</p>';
     }
     $L = $en
-        ? ['Name', 'Address (in the app)', 'IP', 'SHA-256 fingerprint', 'Version', 'Last signal', 'Status']
-        : ['Nom', "Adresse (dans l'appli)", 'IP', 'Empreinte SHA-256', 'Version', 'Dernier signal', 'État'];
+        ? ['Name', 'Address', 'IP', 'SHA-256 fingerprint', 'Version', 'Last signal', 'Status']
+        : ['Nom', 'Adresse', 'IP', 'Empreinte SHA-256', 'Version', 'Dernier signal', 'État'];
     $h = '<div class="table-scroll"><table class="relays-table"><thead><tr>';
     foreach ($L as $l) {
         $h .= '<th>' . $e($l) . '</th>';
@@ -245,4 +245,30 @@ function relays_render(bool $en): string
         $h .= '</tr>';
     }
     return $h . '</tbody></table></div>';
+}
+
+// Même liste en JSON pour l'appli : relais.php?format=json (ou en/relays.php?format=json).
+// Les pages incluent ce fichier avant toute sortie : la réponse JSON remplace alors la page HTML.
+function relays_json(): void
+{
+    $out = [];
+    foreach (relays_list(time()) as $r) {
+        $out[] = [
+            'name' => $r['name'],
+            'url' => 'https://' . $r['host'] . ($r['port'] === 443 ? '' : ':' . $r['port']),
+            'fp' => $r['fp'],
+            'version' => $r['version'],
+            'last_seen' => $r['last_seen'],
+            'online' => $r['online'],
+        ];
+    }
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
+    header('X-Content-Type-Options: nosniff');
+    echo json_encode(['v' => 1, 'relays' => $out], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+}
+
+if (PHP_SAPI !== 'cli' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'GET' && ($_GET['format'] ?? '') === 'json') {
+    relays_json();
+    exit;
 }

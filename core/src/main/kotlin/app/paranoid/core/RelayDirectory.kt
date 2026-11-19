@@ -11,8 +11,8 @@ import javax.net.ssl.X509TrustManager
 
 // Annuaire public des relais (getparanoid.fr/relais.php) et lecture de l'empreinte d'un relais privé.
 
-/** Liste JSON de l'annuaire : HTTPS classique, certificat vérifié par les autorités du système. */
-const val DIRECTORY_URL = "https://getparanoid.fr/api/relays.php"
+/** Liste JSON de l'annuaire (même page que le tableau du site) : HTTPS classique, certificat vérifié par les autorités du système. */
+const val DIRECTORY_URL = "https://getparanoid.fr/relais.php?format=json"
 
 class PublicRelay(
     val name: String,

@@ -1,12 +1,9 @@
 package app.paranoid
 
-import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
-import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
@@ -29,7 +26,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -72,17 +68,14 @@ fun DonationScreen(vm: MainViewModel) {
                     Button(onClick = { copyAddress(ctx) }, modifier = Modifier.fillMaxWidth()) {
                         Text(tr("Copier l'adresse", "Copy the address"))
                     }
-                    OutlinedButton(onClick = { openWallet(ctx) }, modifier = Modifier.fillMaxWidth()) {
-                        Text(tr("Ouvrir dans un portefeuille Monero", "Open in a Monero wallet"))
+                    OutlinedButton(onClick = { shareAddress(ctx) }, modifier = Modifier.fillMaxWidth()) {
+                        Text(tr("Partager", "Share"))
                     }
                 }
             }
-            Text(tr("Vous découvrez Monero ? Le site officiel getmonero.org explique comment obtenir un portefeuille.",
-                "New to Monero? The official site getmonero.org explains how to get a wallet."),
+            Text(tr("Vous découvrez Monero ? Le site getmonero.org explique comment obtenir un portefeuille.",
+                "New to Monero? The getmonero.org site explains how to get a wallet."),
                 style = MaterialTheme.typography.bodySmall)
-            TextButton(onClick = { open(ctx, Uri.parse("https://www.getmonero.org/"), tr("aucun navigateur installé", "no browser installed")) }) {
-                Text("getmonero.org")
-            }
         }
     }
 }
@@ -92,13 +85,10 @@ private fun copyAddress(ctx: Context) {
     cm.setPrimaryClip(ClipData.newPlainText(tr("Adresse Monero", "Monero address"), MONERO_ADDRESS))
 }
 
-private fun openWallet(ctx: Context) =
-    open(ctx, Uri.parse("monero:$MONERO_ADDRESS"), tr("aucun portefeuille Monero installé : copier l'adresse", "no Monero wallet installed: copy the address"))
-
-private fun open(ctx: Context, uri: Uri, missing: String) {
-    try {
-        ctx.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-    } catch (_: ActivityNotFoundException) {
-        Toast.makeText(ctx, missing, Toast.LENGTH_LONG).show()
-    }
+/** Menu de partage Android (e-mail, messagerie…) avec l'adresse en texte. */
+private fun shareAddress(ctx: Context) {
+    val send = Intent(Intent.ACTION_SEND).setType("text/plain")
+        .putExtra(Intent.EXTRA_SUBJECT, tr("Adresse Monero de Paranoid", "Paranoid Monero address"))
+        .putExtra(Intent.EXTRA_TEXT, MONERO_ADDRESS)
+    ctx.startActivity(Intent.createChooser(send, tr("Partager l'adresse", "Share the address")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
 }
