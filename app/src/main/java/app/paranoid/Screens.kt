@@ -196,7 +196,8 @@ fun SetupScreen(ui: Ui, vm: MainViewModel) {
                 textAlign = TextAlign.Center,
             )
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                RelayChooser(ui, vm, choice)
+                Text(tr("Sélectionner un relais", "Select a relay"), style = MaterialTheme.typography.titleLarge)
+                RelayChooser(ui, vm, choice, intro = false, autoLoad = true)
             }
             Button(onClick = { vm.setup(choice.targetUrl, choice.targetFp) },
                 enabled = !ui.busy && choice.targetUrl.isNotBlank() && choice.targetFp.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
@@ -292,7 +293,12 @@ fun AddContactScreen(ui: Ui, vm: MainViewModel) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             val invite = ui.add.invite
-            if (invite == null) {
+            if (ui.noRelay) {
+                // Identité sans relais : impossible de créer une boîte ni de répondre à un QR.
+                Text(tr("Aucun relais n'est sélectionné. Choisir d'abord un relais pour pouvoir ajouter des contacts.",
+                    "No relay is selected. Choose a relay first to be able to add contacts."))
+                Button(onClick = { vm.goChangeRelay() }, modifier = Modifier.fillMaxWidth()) { Text(tr("Changer de relais", "Change relay")) }
+            } else if (invite == null) {
                 Text(tr("L'un affiche son QR, l'autre le scanne.", "One shows their QR, the other scans it."))
                 OutlinedTextField(name, { name = it }, label = { Text(tr("Nom du contact (reste sur ce téléphone)", "Contact name (stays on this phone)")) },
                     singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -627,7 +633,7 @@ fun ChangeRelayScreen(ui: Ui, vm: MainViewModel) {
                     )
                 }
             }
-            Text(tr("Relais actuel : ${ui.relayUrl}", "Current relay: ${ui.relayUrl}"), style = MaterialTheme.typography.bodySmall)
+            Text(tr("Relais actuel : ${ui.relayUrl.ifEmpty { "aucun" }}", "Current relay: ${ui.relayUrl.ifEmpty { "none" }}"), style = MaterialTheme.typography.bodySmall)
 
             RelayChooser(ui, vm, choice, currentUrl = ui.relayUrl, currentFp = ui.relayFp)
             HorizontalDivider()
@@ -664,17 +670,23 @@ class RelayChoice(url: String = "", fp: String = "") {
 
 /** Annuaire public (chargé à la demande) puis relais privé ; partagé par la création d'identité et « Changer de relais ». */
 @Composable
-fun RelayChooser(ui: Ui, vm: MainViewModel, c: RelayChoice, currentUrl: String? = null, currentFp: String? = null) {
+fun RelayChooser(ui: Ui, vm: MainViewModel, c: RelayChoice, currentUrl: String? = null, currentFp: String? = null,
+                 intro: Boolean = true, autoLoad: Boolean = false) {
+    // Création d'identité : la liste est chargée d'office (une seule fois par affichage de l'écran).
+    LaunchedEffect(autoLoad) { if (autoLoad && ui.directory == null) vm.loadDirectory() }
     // Empreinte lue sur le relais privé : reportée dans le champ si l'adresse n'a pas changé entre-temps.
     LaunchedEffect(ui.probedFp, ui.probedUrl) {
         if (ui.probedFp != null && ui.probedUrl == c.url.trim().trimEnd('/')) c.fp = ui.probedFp
     }
     Text(tr("Relais publics", "Public relays"), style = MaterialTheme.typography.titleMedium)
-    Text(tr("Relais publiés dans l'annuaire de getparanoid.fr par leur opérateur. Afficher la liste contacte getparanoid.fr, qui voit alors l'adresse IP du téléphone.",
+    if (intro) Text(tr("Relais publiés dans l'annuaire de getparanoid.fr par leur opérateur. Afficher la liste contacte getparanoid.fr, qui voit alors l'adresse IP du téléphone.",
         "Relays published by their operator in the getparanoid.fr directory. Showing the list contacts getparanoid.fr, which then sees the phone's IP address."),
         style = MaterialTheme.typography.bodySmall)
     val dir = ui.directory
-    if (dir == null) {
+    if (dir == null && autoLoad) {
+        if (ui.busy) Text(tr("Chargement de la liste…", "Loading the list…"), style = MaterialTheme.typography.bodySmall)
+        else TextButton(onClick = { vm.loadDirectory() }) { Text(tr("Actualiser la liste", "Refresh the list")) }
+    } else if (dir == null) {
         OutlinedButton(onClick = { vm.loadDirectory() }, enabled = !ui.busy, modifier = Modifier.fillMaxWidth()) {
             Text(tr("Afficher les relais publics", "Show public relays"))
         }

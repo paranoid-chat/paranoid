@@ -153,8 +153,8 @@ private fun LiveInfo(ui: Ui, vm: MainViewModel) {
         style = MaterialTheme.typography.bodyMedium)
     Info(tr("Mon empreinte de sécurité", "My safety fingerprint"), ui.mySafety,
         tr("Le contact doit voir exactement cette suite pour cette identité. 10 premiers octets de SHA-256 de la clé d'identité.", "The contact must see exactly this sequence for this identity. First 10 bytes of the SHA-256 of the identity key."))
-    Info(tr("Mon relais", "My relay"), ui.relayUrl, null)
-    Info(tr("Empreinte du certificat du relais", "Relay certificate fingerprint"), ui.relayFp,
+    Info(tr("Mon relais", "My relay"), ui.relayUrl.ifEmpty { tr("Aucun", "None") }, null)
+    Info(tr("Empreinte du certificat du relais", "Relay certificate fingerprint"), ui.relayFp.ifEmpty { "—" },
         tr("SHA-256 du certificat TLS. L'appli refuse tout relais dont le certificat a une autre empreinte.", "SHA-256 of the TLS certificate. The app refuses any relay whose certificate has another fingerprint."))
     Info("Contacts", "${ui.contacts.size}", null)
     Info(tr("Protection de la clé du coffre", "Vault key protection"), protection,

@@ -58,6 +58,12 @@ data class ContactRow(
 data class MessageRow(val key: String, val outgoing: Boolean, val text: String, val ts: Long, val status: MessageStatus)
 
 /** Relais de l'annuaire public, tel qu'affiché dans « Changer de relais ». */
+/**
+ * Relais de repli de l'identité leurre (code de destruction, ancien état illisible, annuaire vide ou
+ * injoignable) : adresse réservée (.invalid), jamais affichée ; l'appli demande alors de choisir un relais.
+ */
+const val NO_RELAY_URL = "https://relay.invalid"
+
 data class RelayRow(val name: String, val url: String, val fp: String, val version: String, val lastSeen: Long, val online: Boolean)
 
 data class AddFlow(val name: String = "", val invite: String? = null)
@@ -80,6 +86,8 @@ data class Ui(
     /** Empreinte lue sur un relais privé, pour l'adresse [probedUrl]. */
     val probedUrl: String? = null,
     val probedFp: String? = null,
+    /** Identité sans relais utilisable (voir [NO_RELAY_URL]). */
+    val noRelay: Boolean = false,
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -147,8 +155,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 } ?: emptyList()
                 cur.copy(
-                    screen = target, mySafety = m.safetyNumber, relayUrl = m.state.relay.url,
-                    relayFp = formatFingerprint(m.state.relay.fp), historySeconds = m.state.historySeconds,
+                    screen = target, mySafety = m.safetyNumber,
+                    relayUrl = if (m.state.relay.url == NO_RELAY_URL) "" else m.state.relay.url,
+                    relayFp = if (m.state.relay.url == NO_RELAY_URL) "" else formatFingerprint(m.state.relay.fp),
+                    noRelay = m.state.relay.url == NO_RELAY_URL, historySeconds = m.state.historySeconds,
                     contacts = contacts, chat = chat,
                 )
             }
@@ -240,12 +250,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val old = runCatching { store.load() }.getOrNull()
         val m = messenger
         if (m != null) synchronized(m) { messenger = null }
-        // Ancien état illisible : pas de relais connu, l'identité leurre pointe vers une adresse réservée (.invalid).
-        val relay = old?.relay ?: RelayRef("https://relay.invalid", ByteArray(32))
-        val fresh = AppState.newIdentity(relay)
-        _ui.value = Ui(screen = Screen.Contacts, mySafety = safetyNumber(fresh.ik), relayUrl = relay.url, relayFp = formatFingerprint(relay.fp))
+        // Nouvelle identité sur le même relais. Ancien état illisible : premier relais en ligne de
+        // l'annuaire public, cherché en arrière-plan ; à défaut, NO_RELAY_URL (rien n'est affiché).
+        var fresh = AppState.newIdentity(old?.relay ?: RelayRef(NO_RELAY_URL, ByteArray(32)))
+        _ui.value = if (old != null) {
+            Ui(screen = Screen.Contacts, mySafety = safetyNumber(fresh.ik), relayUrl = fresh.relay.url, relayFp = formatFingerprint(fresh.relay.fp))
+        } else {
+            Ui(screen = Screen.Contacts, mySafety = safetyNumber(fresh.ik), noRelay = true)
+        }
         duressJob = viewModelScope.launch(Dispatchers.IO + NonCancellable) {
             store.wipe()
+            if (old == null) {
+                runCatching { RelayDirectory.fetch(10_000).firstOrNull { it.online } }.getOrNull()?.let { r ->
+                    fresh = AppState(fresh.identitySeed, fresh.x25519Priv, RelayRef(r.url, r.fp))
+                    _ui.update { it.copy(relayUrl = r.url, relayFp = formatFingerprint(r.fp), noRelay = false) }
+                }
+            }
             runCatching {
                 store.beginNew()
                 store.setCodes(fresh, code, b64(randomBytes(24)))

@@ -1,4 +1,4 @@
-# Paranoid — v1.3.2
+# Paranoid — v1.3.3
 
 *The Chat app for the truly paranoids.*
 
@@ -23,13 +23,13 @@ Documents de référence : `PROTOCOL.md` (client ↔ relais, contenu du QR), `ME
 - **Code de déverrouillage** : Argon2id (64 Mio, 3 passes). Après 5 échecs, attente de 30 s, doublée à chaque échec (1 h maximum). Verrouillage avec le cadenas, ou après 60 s en arrière-plan.
 - **Code de destruction**, saisi à la place du code normal. L'appli fait **comme si le code était bon** et s'ouvre sur une liste de contacts vide. En arrière-plan :
   1. la clé Keystore et le coffre sont détruits ;
-  2. une nouvelle identité est créée ; le code qui vient d'être saisi devient son code de déverrouillage, son code de destruction est aléatoire (à redéfinir dans *Modification des codes*) ;
+  2. une nouvelle identité est créée sur le même relais ; le code qui vient d'être saisi devient son code de déverrouillage, son code de destruction est aléatoire (à redéfinir dans *Modification des codes*). Si l'ancien état est illisible, le relais est le premier relais en ligne de l'annuaire public ; si l'annuaire est vide ou injoignable, l'identité n'a aucun relais : rien ne l'indique sur l'écran d'accueil, *Ajouter un contact* demande de choisir d'abord un relais (*Changer de relais*) ;
   3. depuis la mémoire, l'alerte « X a utilisé son code de destruction » part chez tous les contacts (5 s maximum) ;
   4. l'ancien état est effacé de la mémoire.
 
   Chez le destinataire, la conversation affiche l'alerte et n'accepte plus d'envoi.
 - **Modification des codes** (menu ⋮) : le code actuel est exigé ; le code de destruction y a le même effet qu'au déverrouillage.
-- **Création de l'identité** : le relais initial se choisit de la même façon que dans *Changer de relais* (relais publics ou relais privé, empreinte facultative). Aucun relais n'est prérempli.
+- **Création de l'identité** : sous « Sélectionner un relais », la liste des relais publics est chargée d'office (bouton *Actualiser la liste*), puis la partie relais privé (empreinte facultative). Aucun relais n'est prérempli.
 - **Changer de relais** (menu ⋮) : deux façons de choisir le nouveau relais.
   - **Relais publics** : *Afficher les relais publics* charge l'annuaire de getparanoid.fr (`https://getparanoid.fr/relais.php?format=json` : la page Relais du site, en JSON, HTTPS classique, à la demande seulement : getparanoid.fr voit alors l'IP du téléphone). Un appui sur un relais reprend son adresse et son empreinte, sans rien taper. Le relais actuel est signalé et non sélectionnable.
   - **Relais privé** : adresse saisie à la main ; l'empreinte SHA-256 est facultative. Sans elle, *Lire l'empreinte présentée par le relais* fait une poignée de main TLS (rien n'est envoyé) et remplit le champ ; à comparer si possible avec `paranoid-relay info` chez l'opérateur, c'est cette empreinte qui est épinglée.
