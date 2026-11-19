@@ -16,8 +16,8 @@ android {
         applicationId = "app.paranoid"
         minSdk = 33
         targetSdk = 35
-        versionCode = 17
-        versionName = "1.3.3"
+        versionCode = 18
+        versionName = "1.3.4"
     }
 
     signingConfigs {

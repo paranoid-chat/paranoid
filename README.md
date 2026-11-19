@@ -1,4 +1,4 @@
-# Paranoid — v1.3.3
+# Paranoid — v1.3.4
 
 *The Chat app for the truly paranoids.*
 
@@ -29,11 +29,11 @@ Documents de référence : `PROTOCOL.md` (client ↔ relais, contenu du QR), `ME
 
   Chez le destinataire, la conversation affiche l'alerte et n'accepte plus d'envoi.
 - **Modification des codes** (menu ⋮) : le code actuel est exigé ; le code de destruction y a le même effet qu'au déverrouillage.
-- **Création de l'identité** : sous « Sélectionner un relais », la liste des relais publics est chargée d'office (bouton *Actualiser la liste*), puis la partie relais privé (empreinte facultative). Aucun relais n'est prérempli.
-- **Changer de relais** (menu ⋮) : deux façons de choisir le nouveau relais.
-  - **Relais publics** : *Afficher les relais publics* charge l'annuaire de getparanoid.fr (`https://getparanoid.fr/relais.php?format=json` : la page Relais du site, en JSON, HTTPS classique, à la demande seulement : getparanoid.fr voit alors l'IP du téléphone). Un appui sur un relais reprend son adresse et son empreinte, sans rien taper. Le relais actuel est signalé et non sélectionnable.
+- **Création de l'identité** et **Changer de relais** (menu ⋮) : sous « Sélectionner un relais », un menu déroulant *Relais publics* / *Relais privé* n'affiche que la partie choisie.
+  - **Relais publics** (par défaut) : la liste de l'annuaire getparanoid.fr (`https://getparanoid.fr/relais.php?format=json`, HTTPS classique ; getparanoid.fr voit alors l'IP du téléphone) est chargée d'office, avec *Actualiser la liste*. Un appui sur un relais reprend son adresse et son empreinte, sans rien taper. Dans *Changer de relais*, le relais actuel est signalé et non sélectionnable.
   - **Relais privé** : adresse saisie à la main ; l'empreinte SHA-256 est facultative. Sans elle, *Lire l'empreinte présentée par le relais* fait une poignée de main TLS (rien n'est envoyé) et remplit le champ ; à comparer si possible avec `paranoid-relay info` chez l'opérateur, c'est cette empreinte qui est épinglée.
 
+  Aucun relais n'est prérempli.
   Le changement est volontairement sans migration, **tout est effacé**. Le code actuel est exigé (le code de destruction y a le même effet qu'au déverrouillage), puis le nouveau relais est testé : en cas d'échec, rien n'est touché. Chaque contact reçoit « X a changé de relais » et sa conversation se ferme. Ensuite : nouvelle identité, nouveaux codes, nouvel appairage avec chacun.
 - **Paramètres** (menu ⋮) :
   - **Conservation de l'historique** : durée de conservation sur un curseur (pour toujours, 1 an, 6 mois, 3 mois, 1 mois, 1 semaine, 3 jours, 24 heures). Les messages plus anciens sont effacés de ce téléphone au déverrouillage, à chaque relève et dès que le réglage change (confirmation avant d'effacer). Rien n'est effacé chez les contacts. Les alertes « code de destruction » et « changement de relais » sont toujours gardées.
@@ -174,8 +174,8 @@ Tape un message puis Entrée. Les messages du téléphone s'affichent au fil de 
 | 19 | Curseur sur « 24 heures », puis appli fermée plus de 24 h | Au déverrouillage, les messages de plus de 24 h ont disparu |
 | 20 | Relais lancé avec `--max-db 12K` (test seulement), puis plusieurs envois | « le relais est plein » après quelques messages (mesure toutes les 10 s) |
 | 21 | *Paramètres → Langue → English* | L'appli se rouvre en anglais, sans reverrouillage ; le choix reste après redémarrage et apparaît dans les réglages Android de l'appli |
-| 22 | *Changer de relais → Afficher les relais publics* | Liste de l'annuaire (en ligne d'abord) ; le relais actuel marqué « Relais actuel » ; un appui affiche l'empreinte et « Nouveau relais : … » |
-| 23 | *Changer de relais*, relais privé sans empreinte → *Lire l'empreinte présentée par le relais* | Champ rempli avec l'empreinte du relais, identique à `paranoid-relay info` |
+| 22 | *Changer de relais*, menu *Relais publics* | Liste de l'annuaire (en ligne d'abord) ; le relais actuel marqué « Relais actuel » ; un appui affiche l'empreinte et « Nouveau relais : … » |
+| 23 | *Changer de relais*, menu *Relais privé*, sans empreinte → *Lire l'empreinte présentée par le relais* | Champ rempli avec l'empreinte du relais, identique à `paranoid-relay info` |
 | 24 | *Donation* → *Copier l'adresse*, coller ailleurs | Adresse identique à celle du site |
 
 Après les scénarios 11, 15 et 16 : `& $C -d pc remove tel`, supprimer le contact sur le téléphone, puis refaire l'appairage. Après le 13, le dossier `pc` est effacé : refais aussi l'`init`.

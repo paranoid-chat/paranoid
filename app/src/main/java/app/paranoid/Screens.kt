@@ -32,6 +32,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Warning
@@ -197,7 +198,7 @@ fun SetupScreen(ui: Ui, vm: MainViewModel) {
             )
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(tr("Sélectionner un relais", "Select a relay"), style = MaterialTheme.typography.titleLarge)
-                RelayChooser(ui, vm, choice, intro = false, autoLoad = true)
+                RelayChooser(ui, vm, choice)
             }
             Button(onClick = { vm.setup(choice.targetUrl, choice.targetFp) },
                 enabled = !ui.busy && choice.targetUrl.isNotBlank() && choice.targetFp.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
@@ -635,14 +636,18 @@ fun ChangeRelayScreen(ui: Ui, vm: MainViewModel) {
             }
             Text(tr("Relais actuel : ${ui.relayUrl.ifEmpty { "aucun" }}", "Current relay: ${ui.relayUrl.ifEmpty { "none" }}"), style = MaterialTheme.typography.bodySmall)
 
+            Text(tr("Sélectionner un relais", "Select a relay"), style = MaterialTheme.typography.titleMedium)
             RelayChooser(ui, vm, choice, currentUrl = ui.relayUrl, currentFp = ui.relayFp)
             HorizontalDivider()
 
             // ---------- validation ----------
             Text(
-                choice.pick?.let { tr("Nouveau relais : ${it.name} (${it.url})", "New relay: ${it.name} (${it.url})") }
-                    ?: if (choice.url.isNotBlank()) tr("Nouveau relais : ${choice.url.trim()}", "New relay: ${choice.url.trim()}")
-                    else tr("Choisir un relais public ou saisir un relais privé.", "Pick a public relay or enter a private one."),
+                when {
+                    choice.public && choice.pick != null -> choice.pick!!.let { tr("Nouveau relais : ${it.name} (${it.url})", "New relay: ${it.name} (${it.url})") }
+                    !choice.public && choice.url.isNotBlank() -> tr("Nouveau relais : ${choice.url.trim()}", "New relay: ${choice.url.trim()}")
+                    choice.public -> tr("Choisir un relais dans la liste.", "Pick a relay from the list.")
+                    else -> tr("Saisir l'adresse du relais.", "Enter the relay address.")
+                },
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(tr("Le nouveau relais est testé (connexion et empreinte) avant que quoi que ce soit ne soit effacé.", "The new relay is tested (connection and fingerprint) before anything is erased."),
@@ -660,59 +665,64 @@ fun ChangeRelayScreen(ui: Ui, vm: MainViewModel) {
 }
 
 /** Choix d'un relais : un relais de l'annuaire public, ou un relais privé (adresse + empreinte facultative). */
-class RelayChoice(url: String = "", fp: String = "") {
+class RelayChoice {
+    /** true : relais de l'annuaire public ; false : relais privé saisi à la main. */
+    var public by mutableStateOf(true)
     var pick by mutableStateOf<RelayRow?>(null)
-    var url by mutableStateOf(url)
-    var fp by mutableStateOf(fp)
-    val targetUrl get() = pick?.url ?: url
-    val targetFp get() = pick?.fp ?: fp
+    var url by mutableStateOf("")
+    var fp by mutableStateOf("")
+    val targetUrl get() = if (public) pick?.url ?: "" else url
+    val targetFp get() = if (public) pick?.fp ?: "" else fp
 }
 
-/** Annuaire public (chargé à la demande) puis relais privé ; partagé par la création d'identité et « Changer de relais ». */
+/**
+ * Choix du relais, partagé par la création d'identité et « Changer de relais » : un menu déroulant
+ * « Relais publics » / « Relais privé », puis seulement la partie choisie.
+ */
 @Composable
-fun RelayChooser(ui: Ui, vm: MainViewModel, c: RelayChoice, currentUrl: String? = null, currentFp: String? = null,
-                 intro: Boolean = true, autoLoad: Boolean = false) {
-    // Création d'identité : la liste est chargée d'office (une seule fois par affichage de l'écran).
-    LaunchedEffect(autoLoad) { if (autoLoad && ui.directory == null) vm.loadDirectory() }
+fun RelayChooser(ui: Ui, vm: MainViewModel, c: RelayChoice, currentUrl: String? = null, currentFp: String? = null) {
+    // Liste de l'annuaire chargée d'office quand « Relais publics » est affiché.
+    LaunchedEffect(c.public) { if (c.public && ui.directory == null) vm.loadDirectory() }
     // Empreinte lue sur le relais privé : reportée dans le champ si l'adresse n'a pas changé entre-temps.
     LaunchedEffect(ui.probedFp, ui.probedUrl) {
         if (ui.probedFp != null && ui.probedUrl == c.url.trim().trimEnd('/')) c.fp = ui.probedFp
     }
-    Text(tr("Relais publics", "Public relays"), style = MaterialTheme.typography.titleMedium)
-    if (intro) Text(tr("Relais publiés dans l'annuaire de getparanoid.fr par leur opérateur. Afficher la liste contacte getparanoid.fr, qui voit alors l'adresse IP du téléphone.",
-        "Relays published by their operator in the getparanoid.fr directory. Showing the list contacts getparanoid.fr, which then sees the phone's IP address."),
-        style = MaterialTheme.typography.bodySmall)
-    val dir = ui.directory
-    if (dir == null && autoLoad) {
-        if (ui.busy) Text(tr("Chargement de la liste…", "Loading the list…"), style = MaterialTheme.typography.bodySmall)
-        else TextButton(onClick = { vm.loadDirectory() }) { Text(tr("Actualiser la liste", "Refresh the list")) }
-    } else if (dir == null) {
-        OutlinedButton(onClick = { vm.loadDirectory() }, enabled = !ui.busy, modifier = Modifier.fillMaxWidth()) {
-            Text(tr("Afficher les relais publics", "Show public relays"))
+    var open by remember { mutableStateOf(false) }
+    Box {
+        OutlinedButton(onClick = { open = true }, modifier = Modifier.fillMaxWidth()) {
+            Text(if (c.public) tr("Relais publics", "Public relays") else tr("Relais privé", "Private relay"), modifier = Modifier.weight(1f))
+            Icon(Icons.Default.ArrowDropDown, null)
         }
-    } else {
-        if (dir.isEmpty()) Text(tr("Aucun relais publié pour le moment.", "No relay published yet."))
-        dir.forEach { r ->
-            val current = currentUrl != null && r.url == currentUrl.trimEnd('/') && r.fp == currentFp
-            RelayCard(r, selected = c.pick?.url == r.url && c.pick?.fp == r.fp, current = current) {
-                c.pick = r; c.url = ""; c.fp = ""
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(text = { Text(tr("Relais publics", "Public relays")) }, onClick = { open = false; c.public = true })
+            DropdownMenuItem(text = { Text(tr("Relais privé", "Private relay")) }, onClick = { open = false; c.public = false })
+        }
+    }
+    if (c.public) {
+        val dir = ui.directory
+        when {
+            dir == null && ui.busy -> Text(tr("Chargement de la liste…", "Loading the list…"), style = MaterialTheme.typography.bodySmall)
+            dir == null -> {}
+            dir.isEmpty() -> Text(tr("Aucun relais publié pour le moment.", "No relay published yet."))
+            else -> dir.forEach { r ->
+                val current = currentUrl != null && r.url == currentUrl.trimEnd('/') && r.fp == currentFp
+                RelayCard(r, selected = c.pick?.url == r.url && c.pick?.fp == r.fp, current = current) { c.pick = r }
             }
         }
         TextButton(onClick = { c.pick = null; vm.loadDirectory() }, enabled = !ui.busy) { Text(tr("Actualiser la liste", "Refresh the list")) }
-    }
-    HorizontalDivider()
-    Text(tr("Relais privé", "Private relay"), style = MaterialTheme.typography.titleMedium)
-    OutlinedTextField(c.url, { c.url = it; c.pick = null; c.fp = "" }, label = { Text(tr("Adresse du relais (https://…)", "Relay address (https://…)")) },
-        singleLine = true, modifier = Modifier.fillMaxWidth())
-    OutlinedTextField(c.fp, { c.fp = it; c.pick = null }, label = { Text(tr("Empreinte SHA-256 (facultative)", "SHA-256 fingerprint (optional)")) },
-        modifier = Modifier.fillMaxWidth(), textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace))
-    if (c.fp.isBlank()) {
-        OutlinedButton(onClick = { vm.probeRelay(c.url) }, enabled = c.url.trim().startsWith("https://") && !ui.busy, modifier = Modifier.fillMaxWidth()) {
-            Text(tr("Lire l'empreinte présentée par le relais", "Read the fingerprint presented by the relay"))
+    } else {
+        OutlinedTextField(c.url, { c.url = it; c.fp = "" }, label = { Text(tr("Adresse du relais (https://…)", "Relay address (https://…)")) },
+            singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(c.fp, { c.fp = it }, label = { Text(tr("Empreinte SHA-256 (facultative)", "SHA-256 fingerprint (optional)")) },
+            modifier = Modifier.fillMaxWidth(), textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace))
+        if (c.fp.isBlank()) {
+            OutlinedButton(onClick = { vm.probeRelay(c.url) }, enabled = c.url.trim().startsWith("https://") && !ui.busy, modifier = Modifier.fillMaxWidth()) {
+                Text(tr("Lire l'empreinte présentée par le relais", "Read the fingerprint presented by the relay"))
+            }
+        } else if (ui.probedFp != null && c.fp == ui.probedFp) {
+            Text(tr("Empreinte lue sur le relais : à vérifier avec son opérateur si possible.", "Fingerprint read from the relay: check it with its operator if possible."),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
-    } else if (ui.probedFp != null && c.fp == ui.probedFp) {
-        Text(tr("Empreinte lue sur le relais : à vérifier avec son opérateur si possible.", "Fingerprint read from the relay: check it with its operator if possible."),
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
     }
 }
 
