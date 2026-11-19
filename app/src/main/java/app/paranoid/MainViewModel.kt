@@ -240,7 +240,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val old = runCatching { store.load() }.getOrNull()
         val m = messenger
         if (m != null) synchronized(m) { messenger = null }
-        val relay = old?.relay ?: RelayRef(BuildConfig.DEFAULT_RELAY_URL, parseFingerprint(BuildConfig.DEFAULT_RELAY_FP))
+        // Ancien état illisible : pas de relais connu, l'identité leurre pointe vers une adresse réservée (.invalid).
+        val relay = old?.relay ?: RelayRef("https://relay.invalid", ByteArray(32))
         val fresh = AppState.newIdentity(relay)
         _ui.value = Ui(screen = Screen.Contacts, mySafety = safetyNumber(fresh.ik), relayUrl = relay.url, relayFp = formatFingerprint(relay.fp))
         duressJob = viewModelScope.launch(Dispatchers.IO + NonCancellable) {

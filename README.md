@@ -1,4 +1,4 @@
-# Paranoid — v1.3.1
+# Paranoid — v1.3.2
 
 *The Chat app for the truly paranoids.*
 
@@ -29,7 +29,7 @@ Documents de référence : `PROTOCOL.md` (client ↔ relais, contenu du QR), `ME
 
   Chez le destinataire, la conversation affiche l'alerte et n'accepte plus d'envoi.
 - **Modification des codes** (menu ⋮) : le code actuel est exigé ; le code de destruction y a le même effet qu'au déverrouillage.
-- **Création de l'identité** : le relais initial se choisit de la même façon que dans *Changer de relais* (relais publics ou relais privé, empreinte facultative) ; le relais par défaut du build reste prérempli dans la partie relais privé.
+- **Création de l'identité** : le relais initial se choisit de la même façon que dans *Changer de relais* (relais publics ou relais privé, empreinte facultative). Aucun relais n'est prérempli.
 - **Changer de relais** (menu ⋮) : deux façons de choisir le nouveau relais.
   - **Relais publics** : *Afficher les relais publics* charge l'annuaire de getparanoid.fr (`https://getparanoid.fr/relais.php?format=json` : la page Relais du site, en JSON, HTTPS classique, à la demande seulement : getparanoid.fr voit alors l'IP du téléphone). Un appui sur un relais reprend son adresse et son empreinte, sans rien taper. Le relais actuel est signalé et non sélectionnable.
   - **Relais privé** : adresse saisie à la main ; l'empreinte SHA-256 est facultative. Sans elle, *Lire l'empreinte présentée par le relais* fait une poignée de main TLS (rien n'est envoyé) et remplit le champ ; à comparer si possible avec `paranoid-relay info` chez l'opérateur, c'est cette empreinte qui est épinglée.

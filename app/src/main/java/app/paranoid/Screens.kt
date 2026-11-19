@@ -177,7 +177,7 @@ fun FatalScreen(message: String, vm: MainViewModel) {
 
 @Composable
 fun SetupScreen(ui: Ui, vm: MainViewModel) {
-    val choice = remember { RelayChoice(BuildConfig.DEFAULT_RELAY_URL, BuildConfig.DEFAULT_RELAY_FP) }
+    val choice = remember { RelayChoice() }
     Surface(Modifier.fillMaxSize()) {
         Column(
             Modifier.verticalScroll(rememberScrollState()).windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars)).padding(24.dp),
@@ -243,7 +243,7 @@ fun ContactsScreen(ui: Ui, vm: MainViewModel) {
             Spacer(Modifier.height(8.dp))
             HorizontalDivider()
             if (ui.contacts.isEmpty()) {
-                Text(tr("Aucun contact. Appuyer sur + : l'un affiche son QR, l'autre le scanne, en face à face.", "No contacts. Tap +: one shows their QR, the other scans it, face to face."),
+                Text(tr("Aucun contact. Appuyer sur + pour en ajouter.", "No contacts. Tap + to add one."),
                     modifier = Modifier.padding(24.dp), style = MaterialTheme.typography.bodyMedium)
             }
             LazyColumn(Modifier.fillMaxSize()) {
