@@ -30,6 +30,5 @@ printf 'net.ipv6.conf.all.disable_ipv6 = 1\nnet.ipv6.conf.default.disable_ipv6 =
 # SSH coupé jusqu'au choix fait dans l'assistant du premier démarrage.
 systemctl disable ssh.service >/dev/null 2>&1 || true
 
-mkdir -p /etc/paranoid-relay
-touch /etc/paranoid-relay/firstboot
+# Assistant du premier démarrage (le fichier firstboot, avec la langue, est posé par late.sh).
 systemctl enable paranoid-relay-firstboot.service

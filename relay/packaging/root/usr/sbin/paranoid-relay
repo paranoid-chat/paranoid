@@ -171,7 +171,11 @@ apply_firewall() {
 
 gen_sshd() {
 	echo "# Géré par paranoid-relay (SSH_MODE=$SSH_MODE) : ne pas modifier à la main."
-	echo "PermitRootLogin no"
+	if [ "$SSH_USER" = root ]; then
+		echo "PermitRootLogin prohibit-password"
+	else
+		echo "PermitRootLogin no"
+	fi
 	echo "AllowUsers $SSH_USER"
 	echo "PubkeyAuthentication yes"
 	if [ "$SSH_MODE" = key ]; then
@@ -365,14 +369,20 @@ wizard() {
 		full "$(t "Tout bloquer sauf le relais et SSH" "Block everything except the relay and SSH")" \
 		off "$(t "Aucune règle" "No rules")") || abort
 
-	local keep=(keep "$(t "Ne pas modifier la configuration SSH" "Leave the SSH configuration as is")")
-	[ "$FIRSTBOOT" = 1 ] && { keep=(); SSH_MODE=off; }
+	# Premier démarrage (images) : seul compte root, donc SSH désactivé ou par clé pour root.
+	local sshm=(keep "$(t "Ne pas modifier la configuration SSH" "Leave the SSH configuration as is")"
+		key "$(t "Clé uniquement, root interdit, 3 essais" "Key only, no root, 3 attempts")"
+		password "$(t "Mot de passe fort, root interdit, 3 essais" "Strong password, no root, 3 attempts")"
+		off "$(t "Désactiver SSH (console seule)" "Disable SSH (console only)")")
+	if [ "$FIRSTBOOT" = 1 ] || [ "$SSH_USER" = root ]; then
+		[ "$FIRSTBOOT" = 1 ] && SSH_MODE=off
+		SSH_USER=root
+		local k=("${sshm[@]:0:2}")
+		[ "$FIRSTBOOT" = 1 ] && k=()
+		sshm=("${k[@]}" off "$(t "Désactivé" "Disabled")" key "$(t "Clé SSH pour root" "SSH key for root")")
+	fi
 	while :; do
-		SSH_MODE=$(W --default-item "${SSH_MODE:-keep}" --menu "$(t "Accès SSH d'administration :" "SSH admin access:")" 15 76 4 \
-			"${keep[@]}" \
-			key "$(t "Clé uniquement, root interdit, 3 essais" "Key only, no root, 3 attempts")" \
-			password "$(t "Mot de passe fort, root interdit, 3 essais" "Strong password, no root, 3 attempts")" \
-			off "$(t "Désactiver SSH (console seule)" "Disable SSH (console only)")") || abort
+		SSH_MODE=$(W --default-item "${SSH_MODE:-keep}" --menu "$(t "Accès SSH :" "SSH access:")" 15 76 4 "${sshm[@]}") || abort
 		if [ "$SSH_MODE" = off ] && [ -n "$over_ssh" ]; then
 			W --msgbox "$(t "Vous êtes connecté par SSH : désactivez SSH depuis la console." "You are connected over SSH: disable SSH from the console.")" 8 70 || true
 			continue
@@ -380,7 +390,7 @@ wizard() {
 		break
 	done
 
-	if [ "$FIRSTBOOT" = 0 ] && { [ "$SSH_MODE" = key ] || [ "$SSH_MODE" = password ]; }; then
+	if [ "$SSH_USER" != root ] && { [ "$SSH_MODE" = key ] || [ "$SSH_MODE" = password ]; }; then
 		SSH_USER=$(ask_valid valid_user "$(t "Seul compte autorisé en SSH (existant, pas root) :" "Only account allowed over SSH (existing, not root):")" "${SSH_USER:-${SUDO_USER:-$(logname 2>/dev/null || true)}}") || abort
 	fi
 
@@ -542,19 +552,15 @@ set_hostname() {
 	fi
 }
 
-# set_network IFACE dhcp | IFACE static ADRESSE/PRÉFIXE PASSERELLE "DNS1 DNS2"
+# set_network IFACE ADRESSE/PRÉFIXE PASSERELLE "DNS1 DNS2" (IP fixe)
 set_network() {
-	local ifc=$1 mode=$2 addr=${3:-} gw=${4:-} dns=${5:-}
+	local ifc=$1 addr=$2 gw=$3 dns=$4
 	if command -v nmcli >/dev/null 2>&1 && systemctl is-active --quiet NetworkManager; then
 		local c
 		for c in $(nmcli -t -f UUID,DEVICE con show | awk -F: -v d="$ifc" '$2 == d { print $1 }'); do nmcli con delete "$c" >/dev/null || true; done
 		nmcli con delete paranoid-relay >/dev/null 2>&1 || true
-		if [ "$mode" = dhcp ]; then
-			nmcli con add type ethernet ifname "$ifc" con-name paranoid-relay ipv4.method auto ipv6.method disabled >/dev/null
-		else
-			nmcli con add type ethernet ifname "$ifc" con-name paranoid-relay ipv4.method manual ipv4.addresses "$addr" \
-				ipv4.gateway "$gw" ipv4.dns "${dns// /,}" ipv6.method disabled >/dev/null
-		fi
+		nmcli con add type ethernet ifname "$ifc" con-name paranoid-relay ipv4.method manual ipv4.addresses "$addr" \
+			ipv4.gateway "$gw" ipv4.dns "${dns// /,}" ipv6.method disabled >/dev/null
 		nmcli con up paranoid-relay >/dev/null 2>&1 || true
 	else
 		{
@@ -563,83 +569,74 @@ set_network() {
 			echo "auto lo"
 			echo "iface lo inet loopback"
 			echo "allow-hotplug $ifc"
-			if [ "$mode" = dhcp ]; then
-				echo "iface $ifc inet dhcp"
-			else
-				echo "iface $ifc inet static"
-				echo "	address $addr"
-				echo "	gateway $gw"
-			fi
+			echo "iface $ifc inet static"
+			echo "	address $addr"
+			echo "	gateway $gw"
 		} >/etc/network/interfaces
-		if [ "$mode" = static ]; then
-			local d
-			: >/etc/resolv.conf
-			for d in $dns; do echo "nameserver $d" >>/etc/resolv.conf; done
-		fi
+		local d
+		: >/etc/resolv.conf
+		for d in $dns; do echo "nameserver $d" >>/etc/resolv.conf; done
 		ifdown --force "$ifc" >/dev/null 2>&1 || true
 		ip addr flush dev "$ifc" 2>/dev/null || true
 		ifup "$ifc" >/dev/null 2>&1 || true
 	fi
 }
 
-create_admin() { # create_admin NOM MOT_DE_PASSE
-	if ! id -u "$1" >/dev/null 2>&1; then
-		useradd -m -s /bin/bash -G sudo "$1"
-	else
-		usermod -aG sudo "$1"
+# masque 255.255.255.0 ou 24 → 24
+mask_prefix() {
+	local m=$1 n=0 o end=0
+	if [[ $m =~ ^[0-9]{1,2}$ ]]; then
+		if [ "$m" -ge 1 ] && [ "$m" -le 32 ]; then echo "$m"; fi
+		return 0
 	fi
-	printf '%s:%s\n' "$1" "$2" | chpasswd
-	passwd -l root >/dev/null 2>&1 || true
+	valid_ip4 "$m" || return 0
+	for o in ${m//./ }; do
+		[ "$end" = 1 ] && [ "$o" != 0 ] && return 0
+		case $o in 255) n=$((n + 8)); continue ;; 254) n=$((n + 7)) ;; 252) n=$((n + 6)) ;; 248) n=$((n + 5)) ;;
+		240) n=$((n + 4)) ;; 224) n=$((n + 3)) ;; 192) n=$((n + 2)) ;; 128) n=$((n + 1)) ;; 0) ;; *) return 0 ;; esac
+		end=1
+	done
+	[ "$n" -ge 1 ] && echo "$n"
+	return 0
 }
+valid_mask() { [ -n "$(mask_prefix "$1")" ]; }
 
 firstboot_steps() {
-	local v ifc mode addr gw dns pass pass2
-	W --msgbox "$(t "Bienvenue. Cet assistant configure le relais Paranoid : nom de la machine, réseau, compte d'administration, puis le relais lui-même. Tout se règle ici ; à la fin, le relais est prêt.
-
-Flèches et Tab pour naviguer, Entrée pour valider." "Welcome. This wizard sets up the Paranoid relay: machine name, network, admin account, then the relay itself. Everything is set here; at the end, the relay is ready.
-
-Arrows and Tab to move, Enter to confirm.")" 14 76 || true
-
-	v=$(ask_valid valid_hostname "$(t "Nom de la machine (minuscules, chiffres, tirets) :" "Machine name (lowercase, digits, dashes):")" "$(hostname -s)") || return 1
+	local v ifc ip mask gw dns pass pass2
+	v=$(ask_valid valid_hostname "$(t "Nom du système :" "System name:")" "") || return 1
 	set_hostname "$v"
 
 	ifc=$(net_iface)
 	if [ -z "$ifc" ]; then
-		W --msgbox "$(t "Aucune carte réseau Ethernet détectée : brancher un câble réseau puis redémarrer." "No Ethernet card found: plug in a network cable and restart.")" 9 70 || true
+		W --msgbox "$(t "Aucune carte réseau Ethernet détectée." "No Ethernet card found.")" 8 60 || true
 		return 1
 	fi
-	mode=$(W --menu "$(t "Réseau de la carte $ifc (adresse actuelle : $(local_ip)) :" "Network of the $ifc card (current address: $(local_ip)):")" 14 76 2 \
-		dhcp "$(t "Automatique (DHCP, recommandé si la box réserve l'adresse)" "Automatic (DHCP, recommended if the router reserves the address)")" \
-		static "$(t "Adresse IP fixe" "Static IP address")") || return 1
-	if [ "$mode" = static ]; then
-		addr=$(ask_valid valid_cidr "$(t "Adresse IP et préfixe (ex. 192.168.1.50/24) :" "IP address and prefix (e.g. 192.168.1.50/24):")" "$(ip -o -4 addr show dev "$ifc" 2>/dev/null | awk '{ print $4; exit }')") || return 1
-		gw=$(ask_valid valid_ip4 "$(t "Passerelle (la box) :" "Gateway (the router):")" "$(ip -o -4 route show default 2>/dev/null | awk '{ print $3; exit }')") || return 1
-		dns=$(ask_valid valid_ip4s "$(t "Serveurs DNS (séparés par des espaces) :" "DNS servers (separated by spaces):")" "$gw") || return 1
-	fi
-	t "Configuration du réseau…" "Configuring the network…"
-	set_network "$ifc" "$mode" "$addr" "$gw" "$dns"
+	ip=$(ask_valid valid_ip4 "$(t "Adresse IP :" "IP address:")" "$(ip -o -4 addr show dev "$ifc" 2>/dev/null | awk '{ split($4, a, "/"); print a[1]; exit }')") || return 1
+	mask=$(ask_valid valid_mask "$(t "Masque :" "Netmask:")" "255.255.255.0") || return 1
+	gw=$(ask_valid valid_ip4 "$(t "Passerelle :" "Gateway:")" "$(ip -o -4 route show default 2>/dev/null | awk '{ print $3; exit }')") || return 1
+	dns=$(ask_valid valid_ip4s "$(t "DNS :" "DNS:")" "$gw") || return 1
+	set_network "$ifc" "$ip/$(mask_prefix "$mask")" "$gw" "$dns"
 	sleep 3
 
-	SSH_USER=$(ask_valid valid_admin "$(t "Nom du compte d'administration (pour la console et, si activé, SSH) :" "Admin account name (for the console and, if enabled, SSH):")" "${SSH_USER:-admin}") || return 1
-	while :; do
-		pass=$(W --passwordbox "$(t "Mot de passe de $SSH_USER : 14 caractères minimum, 3 types parmi minuscules, majuscules, chiffres, symboles." "Password for $SSH_USER: at least 14 characters, 3 kinds among lowercase, uppercase, digits, symbols.")" 10 76) || return 1
-		pass2=$(W --passwordbox "$(t "Confirmer le mot de passe :" "Confirm the password:")" 8 76) || return 1
-		if [ "$pass" != "$pass2" ]; then
-			W --msgbox "$(t "Les deux saisies diffèrent." "The two entries differ.")" 8 50 || true
-		elif ! strong_password "$pass"; then
-			W --msgbox "$(t "Mot de passe trop faible." "Password too weak.")" 8 50 || true
-		else
-			break
-		fi
-	done
-	create_admin "$SSH_USER" "$pass"
-	set_conf SSH_USER "$SSH_USER"
-	pass=""
-	pass2=""
+	# Image Raspberry Pi : root n'a pas encore de mot de passe (l'ISO l'a demandé à l'installation).
+	if ! passwd -S root 2>/dev/null | awk '{ exit !($2 == "P") }'; then
+		while :; do
+			pass=$(W --passwordbox "$(t 'Mot de passe du superutilisateur "root" :' 'Password of the superuser "root":')" 8 70) || return 1
+			pass2=$(W --passwordbox "$(t 'Confirmation du mot de passe superutilisateur "root" :' 'Confirm the password of the superuser "root":')" 8 70) || return 1
+			if [ "$pass" != "$pass2" ]; then
+				W --msgbox "$(t "Les deux mots de passe sont différents." "The two passwords are different.")" 8 60 || true
+			elif ! SSH_USER=root strong_password "$pass"; then
+				W --msgbox "$(t "Mot de passe trop faible : 14 caractères minimum, 3 types parmi minuscules, majuscules, chiffres, symboles." "Password too weak: at least 14 characters, 3 kinds among lowercase, uppercase, digits, symbols.")" 9 70 || true
+			else
+				break
+			fi
+		done
+		printf 'root:%s\n' "$pass" | chpasswd
+		pass=""
+		pass2=""
+	fi
 	return 0
 }
-
-valid_admin() { [[ $1 =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] && [ "$1" != root ]; }
 
 firstboot() {
 	need_root
@@ -649,11 +646,17 @@ firstboot() {
 	load
 	# Image Raspberry Pi : le certificat n'est jamais dans l'image, il est créé sur la machine.
 	[ -f "$CRT" ] && [ -f "$KEY" ] || gen_cert
-	local v
+	local v fixed=""
+	# ISO : langue choisie au menu de démarrage (écrite dans le fichier firstboot par l'installeur).
+	fixed=$(sed -n 's/^LANG_UI=\(fr\|en\)$/\1/p' "$FIRSTBOOT_FLAG" 2>/dev/null) || true
 	while :; do
 		clear
-		v=$(W --default-item "${LANG_UI:-fr}" --menu "Langue / Language" 12 60 2 fr "Français" en "English") || continue
-		LANG_UI=$v
+		if [ -n "$fixed" ]; then
+			LANG_UI=$fixed
+		else
+			v=$(W --default-item "${LANG_UI:-fr}" --menu "Langue / Language" 12 60 2 fr "Français" en "English") || continue
+			LANG_UI=$v
+		fi
 		set_conf LANG_UI "$LANG_UI"
 		set_keyboard
 		firstboot_steps || continue
@@ -668,16 +671,12 @@ firstboot() {
 URL : $(url)
 Empreinte : $(fingerprint)
 
-À faire sur la box Internet : rediriger le port TCP ${PUBLIC_PORT:-$PORT} vers $(local_ip), port $PORT.
-
-Les utilisateurs saisissent l'URL (et si possible l'empreinte) dans l'appli, ou choisissent ce relais dans la liste des relais publics s'il est publié. Ces informations restent affichées sur cet écran de connexion ; « paranoid-relay info » les réaffiche." "The relay is ready.
+Sur la box : rediriger le port TCP ${PUBLIC_PORT:-$PORT} vers $(local_ip):$PORT." "The relay is ready.
 
 URL: $(url)
 Fingerprint: $(fingerprint)
 
-To do on the Internet router: forward TCP port ${PUBLIC_PORT:-$PORT} to $(local_ip), port $PORT.
-
-Users enter the URL (and if possible the fingerprint) in the app, or pick this relay from the public relay list if it is published. This information stays on this login screen; the paranoid-relay info command shows it again.")" 22 78 || true
+On the router: forward TCP port ${PUBLIC_PORT:-$PORT} to $(local_ip):$PORT.")" 14 78 || true
 	clear
 }
 
