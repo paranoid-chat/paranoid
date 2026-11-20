@@ -14,6 +14,9 @@ rm -rf "$work"
 mkdir -p "$work/debs" "$out"
 
 export DEBIAN_FRONTEND=noninteractive
+# Outils, avec les sources du conteneur (ses paquets peuvent être plus récents que trixie seul).
+apt-get update -q
+apt-get install -y -q --no-install-recommends xorriso curl ca-certificates openssl apt-utils debootstrap >/dev/null
 # Seulement trixie (version ponctuelle courante), comme l'ISO netinst « current ».
 rm -f /etc/apt/sources.list.d/*.sources /etc/apt/sources.list
 cat >/etc/apt/sources.list.d/debian.sources <<'EOF'
@@ -24,7 +27,6 @@ Components: main
 Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
 EOF
 apt-get update -q
-apt-get install -y -q --no-install-recommends xorriso curl ca-certificates openssl apt-utils debootstrap >/dev/null
 
 base=https://cdimage.debian.org/debian-cd/current/amd64/iso-cd
 curl -fsSL "$base/SHA256SUMS" -o "$work/SHA256SUMS"
