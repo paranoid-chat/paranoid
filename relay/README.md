@@ -56,9 +56,10 @@ Les deux images se construisent en parallèle et sont envoyées dans une release
 
 **ISO** (`images/iso/build.sh`, conteneur `debian:trixie`) : remaster de la netinst officielle de Debian 13 (somme SHA-256 vérifiée), installation **sans réseau**.
 
-- `/paranoid/debs` : `paranoid-relay` et les paquets de `packages.list` avec leurs dépendances (version ponctuelle de trixie, comme l'ISO).
+- `/paranoid/debs` : dépôt local (`Packages`) avec `paranoid-relay`, les paquets de `packages.list` et toutes leurs dépendances (mises à jour de sécurité comprises). La construction vérifie qu'il installe le relais sans réseau sur un debootstrap trixie.
+- Clavier : `fr(latin9)` en français, seule variante française présente dans l'installeur Debian 13 (`fr` seul donne un QWERTY).
 - Menus BIOS et UEFI remplacés : *Installer un relais Paranoid (Français)* / *Install a Paranoid relay (English)*, aucune entrée par défaut, attente sans délai.
-- `preseed.cfg` : installation automatique, réseau désactivé, root seul (aucun autre compte), partitionnement automatique, puis `late.sh` (`apt-get install --no-download` des paquets locaux, mot de passe root, langue pour l'assistant, `postinst.sh` : sources APT en ligne, `unattended-upgrades`, IPv6 désactivé, SSH coupé, assistant activé ; journal dans `/var/log/paranoid-install.log`).
+- `preseed.cfg` : installation automatique, réseau désactivé, root seul (aucun autre compte), partitionnement automatique, puis `late.sh` (`install.sh` : apt depuis le dépôt local, mot de passe root, langue pour l'assistant, `postinst.sh` : sources APT en ligne, `unattended-upgrades`, IPv6 désactivé, SSH coupé, assistant activé ; journal dans `/var/log/paranoid-install.log`).
 - `ask.sh` (`partman/early_command`) : mot de passe root (14 caractères minimum, 3 types), disque (le support d'installation est exclu), et en BIOS le disque de démarrage (principal ou au choix).
 - Le certificat TLS est généré pendant l'installation, sur la machine.
 
