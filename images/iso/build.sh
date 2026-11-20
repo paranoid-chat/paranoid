@@ -3,7 +3,7 @@
 # Construit paranoid-relay-VERSION-amd64.iso dans SORTIE. À lancer dans un conteneur debian:trixie (root).
 #   1. ISO netinst officielle de Debian 13 (somme SHA-256 vérifiée) : système de base hors ligne ;
 #   2. /paranoid/debs : paranoid-relay et les paquets de packages.list avec leurs dépendances,
-#      pris dans la même version de Debian (sans les mises à jour de sécurité, pour coller à l'ISO) ;
+#      avec les mises à jour de sécurité (dépôt local sur l'ISO) ;
 #   3. /paranoid/preseed.cfg, ask.sh (mot de passe root, disque, démarrage), late.sh, postinst.sh ;
 #   4. menus de démarrage BIOS et UEFI remplacés : deux entrées, aucune par défaut, attente sans délai.
 set -eu
@@ -14,19 +14,9 @@ rm -rf "$work"
 mkdir -p "$work/debs" "$out"
 
 export DEBIAN_FRONTEND=noninteractive
-# Outils, avec les sources du conteneur (ses paquets peuvent être plus récents que trixie seul).
+# Sources du conteneur (trixie + mises à jour de sécurité) : outils et paquets de l'ISO.
 apt-get update -q
 apt-get install -y -q --no-install-recommends xorriso curl ca-certificates openssl apt-utils debootstrap >/dev/null
-# Seulement trixie (version ponctuelle courante), comme l'ISO netinst « current ».
-rm -f /etc/apt/sources.list.d/*.sources /etc/apt/sources.list
-cat >/etc/apt/sources.list.d/debian.sources <<'EOF'
-Types: deb
-URIs: http://deb.debian.org/debian
-Suites: trixie
-Components: main
-Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
-EOF
-apt-get update -q
 
 base=https://cdimage.debian.org/debian-cd/current/amd64/iso-cd
 curl -fsSL "$base/SHA256SUMS" -o "$work/SHA256SUMS"
