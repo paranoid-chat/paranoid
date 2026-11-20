@@ -42,10 +42,10 @@ Description-fr.UTF-8: Mot de passe trop faible
 Template: paranoid/disk
 Type: select
 Choices: ${CHOICES}
-Description: Disk to install the Paranoid relay on
- Everything on the chosen disk will be erased.
-Description-fr.UTF-8: Disque où installer le relais Paranoid
- Tout le contenu du disque choisi sera effacé.
+Description: Everything on the chosen disk will be erased.
+ Disk to install the Paranoid relay on
+Description-fr.UTF-8: Tout le contenu du disque choisi sera effacé.
+ Disque où installer le relais Paranoid
 
 Template: paranoid/boot-main
 Type: boolean
