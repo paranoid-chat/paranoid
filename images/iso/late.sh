@@ -4,11 +4,8 @@
 log=/target/var/log/paranoid-install.log
 exec >>"$log" 2>&1
 echo "== paquets du relais"
-mkdir -p /target/tmp/paranoid-debs
-cp /cdrom/paranoid/debs/*.deb /target/tmp/paranoid-debs/
-# apt (et non dpkg -i) : il respecte l'ordre des pré-dépendances (python3, etc.).
-in-target sh -c 'DEBIAN_FRONTEND=noninteractive apt-get install -y --no-download -o Dpkg::Options::=--force-confold /tmp/paranoid-debs/*.deb' ||
-	echo "ÉCHEC de l'installation des paquets"
+cp -r /cdrom/paranoid/debs /target/tmp/paranoid-debs
+in-target sh /tmp/paranoid-debs/install.sh /tmp/paranoid-debs || echo "ÉCHEC de l'installation des paquets"
 rm -rf /target/tmp/paranoid-debs
 in-target dpkg -l paranoid-relay console-setup openssh-server nftables unattended-upgrades | tail -5
 

@@ -24,7 +24,7 @@ Components: main
 Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
 EOF
 apt-get update -q
-apt-get install -y -q --no-install-recommends xorriso curl ca-certificates openssl >/dev/null
+apt-get install -y -q --no-install-recommends xorriso curl ca-certificates openssl apt-utils debootstrap >/dev/null
 
 base=https://cdimage.debian.org/debian-cd/current/amd64/iso-cd
 curl -fsSL "$base/SHA256SUMS" -o "$work/SHA256SUMS"
@@ -33,13 +33,29 @@ echo "ISO de base : $netinst"
 curl -fsSL "$base/$netinst" -o "$work/$netinst"
 (cd "$work" && grep " $netinst\$" SHA256SUMS | sha256sum -c -)
 
-# Paquets du relais et dépendances absentes du conteneur (sur-ensemble de ce qui manque au système de base).
+# Paquets du relais avec TOUTES leurs dépendances : statut dpkg vide, sinon apt saute ce qui est déjà
+# dans le conteneur (curl, openssl…) et l'installation hors ligne échoue. Dépôt local (Packages) :
+# dans le système installé, apt ne prend que ce qui manque.
+: >"$work/status"
 # shellcheck disable=SC2046
-apt-get install -y -q --download-only --no-install-recommends -o Dir::Cache::archives="$work/debs" \
-	$(cat "$here/packages.list") "$deb" >/dev/null
+apt-get install -y -q --download-only --no-install-recommends -o Dir::State::status="$work/status" \
+	-o Dir::Cache::archives="$work/debs" $(cat "$here/packages.list") "$deb" >/dev/null
 cp "$deb" "$work/debs/"
 rm -rf "$work/debs/partial" "$work/debs/lock"
+cp "$here/packages.list" "$here/install.sh" "$work/debs/"
+(cd "$work/debs" && apt-ftparchive packages . >Packages && apt-ftparchive release . >Release)
 echo "Paquets ajoutés : $(find "$work/debs" -name '*.deb' | wc -l) ($(du -sh "$work/debs" | cut -f1))"
+
+# Test : le dépôt local installe le relais sur un système de base trixie sans réseau.
+debootstrap --variant=minbase trixie "$work/t" http://deb.debian.org/debian >/dev/null
+cp -r "$work/debs" "$work/t/tmp/paranoid-debs"
+rm -f "$work/t/etc/apt/sources.list" "$work/t/etc/apt/sources.list.d/"*
+mount -t proc proc "$work/t/proc"
+chroot "$work/t" sh /tmp/paranoid-debs/install.sh /tmp/paranoid-debs
+umount "$work/t/proc"
+chroot "$work/t" dpkg-query -W -f '${Package} ${Status}\n' paranoid-relay console-setup openssh-server nftables curl
+[ "$(chroot "$work/t" dpkg-query -W -f '${Status}' paranoid-relay)" = "install ok installed" ]
+rm -rf "$work/t"
 
 iso=$work/$netinst
 xorriso -osirrox on -indev "$iso" -extract /boot/grub/grub.cfg "$work/grub.orig" >/dev/null 2>&1
@@ -50,7 +66,8 @@ xorriso -indev "$iso" -find /install.amd -maxdepth 1 -exec lsdl 2>/dev/null | gr
 	{ echo "noyau de l'installeur introuvable" >&2; exit 1; }
 
 common="auto=true priority=critical preseed/file=/cdrom/paranoid/preseed.cfg"
-fr="$common locale=fr_FR.UTF-8 language=fr country=FR keymap=fr paranoid/lang=fr"
+# Seule la variante latin9 du clavier français existe dans l'installeur (pc105.ekmap) : « fr » seul donne un QWERTY.
+fr="$common locale=fr_FR.UTF-8 language=fr country=FR keymap=\"fr(latin9)\" paranoid/lang=fr"
 en="$common locale=en_US.UTF-8 language=en country=US keymap=us paranoid/lang=en"
 
 # Mot de passe root aléatoire de l'installeur (remplacé par celui que demande ask.sh).

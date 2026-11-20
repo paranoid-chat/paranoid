@@ -50,8 +50,8 @@ Description-fr.UTF-8: Disque où installer le relais Paranoid
 Template: paranoid/boot-main
 Type: boolean
 Default: true
-Description: Install the boot loader on the main disk (${DISK})?
-Description-fr.UTF-8: Installer le démarrage sur le disque principal (${DISK}) ?
+Description: Install GRUB (boot partition) on the main disk? (${DISK})
+Description-fr.UTF-8: Installer GRUB (partition de démarrage) sur le disque principal ? (${DISK})
 
 Template: paranoid/boot-disk
 Type: select

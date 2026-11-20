@@ -72,7 +72,7 @@ jobs:
       - name: ISO amd64 (Debian 13, installeur hors ligne)
         run: |
           v=${{ needs.prepare.outputs.version }}
-          docker run --rm -v "$PWD:/w" -w /w debian:trixie \
+          docker run --privileged --rm -v "$PWD:/w" -w /w debian:trixie \
             sh images/iso/build.sh "$v" "/w/out/paranoid-relay_${v}_amd64.deb" /w/out
       - name: Envoi dans la release
         run: |
