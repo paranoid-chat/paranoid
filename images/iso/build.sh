@@ -33,15 +33,17 @@ echo "ISO de base : $netinst"
 curl -fsSL "$base/$netinst" -o "$work/$netinst"
 (cd "$work" && grep " $netinst\$" SHA256SUMS | sha256sum -c -)
 
-# Paquets du relais avec TOUTES leurs dépendances : statut dpkg vide, sinon apt saute ce qui est déjà
-# dans le conteneur (curl, openssl…) et l'installation hors ligne échoue. Dépôt local (Packages) :
+# Paquets du relais avec TOUTES leurs dépendances (et leurs alternatives), même celles déjà présentes
+# dans le conteneur (curl, openssl…), sinon l'installation hors ligne échoue. Dépôt local (Packages) :
 # dans le système installé, apt ne prend que ce qui manque.
-: >"$work/status"
-# shellcheck disable=SC2046
-apt-get install -y -q --download-only --no-install-recommends -o Dir::State::status="$work/status" \
-	-o Dir::Cache::archives="$work/debs" $(cat "$here/packages.list") "$deb" >/dev/null
+deps=$(dpkg-deb -f "$deb" Depends | sed 's/([^)]*)//g; s/[,|]/ /g')
+# shellcheck disable=SC2046,SC2086
+pkgs=$(apt-cache depends --recurse --no-recommends --no-suggests --no-conflicts --no-breaks --no-replaces \
+	--no-enhances $(cat "$here/packages.list") $deps | grep -v '^ ' | grep -v '^<' | sort -u)
+# shellcheck disable=SC2086
+(cd "$work/debs" && { apt-get download -q $pkgs >/dev/null 2>&1 ||
+	for p in $pkgs; do apt-get download -q "$p" >/dev/null 2>&1 || echo "absent : $p"; done; })
 cp "$deb" "$work/debs/"
-rm -rf "$work/debs/partial" "$work/debs/lock"
 cp "$here/packages.list" "$here/install.sh" "$work/debs/"
 (cd "$work/debs" && apt-ftparchive packages . >Packages && apt-ftparchive release . >Release)
 echo "Paquets ajoutés : $(find "$work/debs" -name '*.deb' | wc -l) ($(du -sh "$work/debs" | cut -f1))"
