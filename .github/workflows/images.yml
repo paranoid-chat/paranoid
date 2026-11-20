@@ -79,7 +79,9 @@ jobs:
           cd out
           sudo chown "$(id -u)" ./*
           sha256sum ./*.iso ./*.deb | sed 's#  \./#  #' > SHA256SUMS.iso
-          gh release upload "relay-v${{ needs.prepare.outputs.version }}" ./*.iso ./*.deb SHA256SUMS.iso --clobber
+          for f in ./*.iso ./*.deb SHA256SUMS.iso; do
+            for i in 1 2 3; do gh release upload "relay-v${{ needs.prepare.outputs.version }}" "$f" --clobber && break; sleep 20; done
+          done
 
   pi:
     needs: prepare
@@ -112,7 +114,9 @@ jobs:
           cd out
           sudo chown "$(id -u)" ./*
           sha256sum ./*.img.xz | sed 's#  \./#  #' > SHA256SUMS.pi
-          gh release upload "relay-v${{ needs.prepare.outputs.version }}" ./*.img.xz SHA256SUMS.pi --clobber
+          for f in ./*.img.xz SHA256SUMS.pi; do
+            for i in 1 2 3; do gh release upload "relay-v${{ needs.prepare.outputs.version }}" "$f" --clobber && break; sleep 20; done
+          done
 
   publish:
     needs: [prepare, iso, pi]
