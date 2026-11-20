@@ -3,7 +3,7 @@ Version: @VERSION@
 Architecture: @ARCH@
 Maintainer: Paranoid <contact@getparanoid.fr>
 Depends: adduser, openssl, nftables, whiptail, systemd, curl, ca-certificates
-Recommends: openssh-server
+Recommends: openssh-server, console-setup, sudo
 Section: net
 Priority: optional
 Homepage: https://getparanoid.fr

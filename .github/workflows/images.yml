@@ -1,0 +1,108 @@
+name: Images du relais
+
+# ISO Debian amd64 et image Raspberry Pi (arm64) du relais, publiées dans une release
+# « relay-vVERSION » qui ne devient jamais « latest » (le lien de l'APK reste valable).
+on:
+  push:
+    branches: [main]
+    paths: ["relay/**", "images/**", ".github/workflows/images.yml"]
+  workflow_dispatch:
+    inputs:
+      replace:
+        description: "Remplacer la release existante de cette version"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version et release existante
+        id: v
+        run: |
+          v=$(cat relay/packaging/VERSION)
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          if gh release view "relay-v$v" >/dev/null 2>&1; then
+            if [ "${{ github.event_name }}" = workflow_dispatch ] && [ "${{ inputs.replace }}" = true ]; then
+              echo "build=yes" >> "$GITHUB_OUTPUT"
+            else
+              echo "Release relay-v$v déjà publiée : augmenter relay/packaging/VERSION pour en publier une nouvelle."
+              echo "build=no" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "build=yes" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-go@v5
+        if: steps.v.outputs.build == 'yes'
+        with:
+          go-version-file: relay/go.mod
+          cache-dependency-path: relay/go.sum
+
+      - name: Paquets .deb
+        if: steps.v.outputs.build == 'yes'
+        working-directory: relay
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          v=${{ steps.v.outputs.version }}
+          mkdir -p ../out
+          for arch in amd64 arm64; do
+            GOOS=linux GOARCH=$arch go build -trimpath -ldflags "-s -w -X main.version=$v" -o /tmp/relayd-$arch .
+            packaging/build-deb.sh $arch /tmp/relayd-$arch ../out
+          done
+          ls -l ../out
+
+      - name: Place disque
+        if: steps.v.outputs.build == 'yes'
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: ISO amd64 (Debian 13, installeur hors ligne)
+        if: steps.v.outputs.build == 'yes'
+        run: |
+          v=${{ steps.v.outputs.version }}
+          docker run --rm -v "$PWD:/w" -w /w debian:trixie \
+            sh images/iso/build.sh "$v" "/w/out/paranoid-relay_${v}_amd64.deb" /w/out
+
+      - name: Image Raspberry Pi (arm64)
+        if: steps.v.outputs.build == 'yes'
+        run: |
+          v=${{ steps.v.outputs.version }}
+          sudo apt-get update -q
+          sudo apt-get install -y -q qemu-user-static binfmt-support xz-utils >/dev/null
+          sudo bash images/pi/build.sh "$v" "out/paranoid-relay_${v}_arm64.deb" out
+
+      - name: Release GitHub
+        if: steps.v.outputs.build == 'yes' && github.ref == 'refs/heads/main'
+        run: |
+          v=${{ steps.v.outputs.version }}
+          cd out
+          sudo chown "$(id -u)" ./*
+          sha256sum ./*.iso ./*.img.xz ./*.deb | sed 's#  \./#  #' > SHA256SUMS
+          cat SHA256SUMS
+          {
+            echo "Relais Paranoid $v (commit ${GITHUB_SHA::7})."
+            echo
+            echo "- \`paranoid-relay-$v-amd64.iso\` : PC ou VM amd64 (BIOS ou UEFI). Installation hors ligne : le menu de démarrage n'a pas de choix par défaut, l'installeur demande le disque puis de taper EFFACER (ERASE) avant d'effacer ; au premier démarrage, un assistant règle tout."
+            echo "- \`paranoid-relay-$v-raspberrypi-arm64.img.xz\` : Raspberry Pi 3, 4, 5 (Raspberry Pi OS Lite 64 bits). À écrire sur une carte SD (Raspberry Pi Imager, « image personnalisée », ou balenaEtcher) ; au premier démarrage, avec écran et clavier, le même assistant."
+            echo "- \`paranoid-relay_${v}_amd64.deb\`, \`paranoid-relay_${v}_arm64.deb\` : pour une Debian existante (\`apt install ./…deb\` puis \`paranoid-relay config\`)."
+            echo
+            echo '```'
+            cat SHA256SUMS
+            echo '```'
+          } > notes.md
+          if gh release view "relay-v$v" >/dev/null 2>&1; then
+            gh release delete "relay-v$v" --yes --cleanup-tag
+          fi
+          gh release create "relay-v$v" ./*.iso ./*.img.xz ./*.deb SHA256SUMS --target "$GITHUB_SHA" \
+            --title "Relais Paranoid $v" --notes-file notes.md --latest=false

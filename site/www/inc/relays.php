@@ -247,7 +247,8 @@ function relays_render(bool $en): string
     return $h . '</tbody></table></div>';
 }
 
-// Même liste en JSON pour l'appli : relais.php?format=json (ou en/relays.php?format=json).
+// Même liste en JSON pour l'appli : relais.php?format=json (ou en/relays.php?format=json) ;
+// relais.php?format=myip donne l'IP publique du demandeur à l'assistant du relais.
 // Les pages incluent ce fichier avant toute sortie : la réponse JSON remplace alors la page HTML.
 function relays_json(): void
 {
@@ -268,7 +269,17 @@ function relays_json(): void
     echo json_encode(['v' => 1, 'relays' => $out], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 }
 
-if (PHP_SAPI !== 'cli' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'GET' && ($_GET['format'] ?? '') === 'json') {
-    relays_json();
-    exit;
+if (PHP_SAPI !== 'cli' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'GET') {
+    $format = $_GET['format'] ?? '';
+    if ($format === 'json') {
+        relays_json();
+        exit;
+    }
+    // Adresse IPv4 publique du demandeur, pour l'assistant du relais (« Adresse publique »). Rien n'est stocké.
+    if ($format === 'myip') {
+        header('Content-Type: text/plain; charset=utf-8');
+        header('Cache-Control: no-store');
+        echo (string) ($_SERVER['REMOTE_ADDR'] ?? '');
+        exit;
+    }
 }

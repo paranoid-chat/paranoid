@@ -1,0 +1,59 @@
+# Installation automatique du relais Paranoid, sans réseau : seules questions posées, le disque
+# et la confirmation tapée (partman/early_command → /cdrom/paranoid/disk.sh).
+# Langue et clavier : passés par l'entrée du menu de démarrage (locale=…, keymap=…).
+d-i debian-installer/allow_unauthenticated boolean true
+
+d-i netcfg/choose_interface select auto
+d-i netcfg/get_hostname string paranoid-relay
+d-i netcfg/hostname string paranoid-relay
+d-i netcfg/get_domain string
+d-i netcfg/dhcp_failed note
+d-i netcfg/dhcp_options select Do not configure the network at this time
+d-i netcfg/wireless_wep string
+d-i hw-detect/load_firmware boolean true
+
+d-i clock-setup/utc boolean true
+d-i time/zone string Etc/UTC
+d-i clock-setup/ntp boolean false
+
+# Root verrouillé, aucun compte : l'assistant du premier démarrage crée le compte d'administration.
+d-i passwd/root-login boolean true
+d-i passwd/root-password-crypted password !
+d-i passwd/make-user boolean false
+
+d-i partman/early_command string sh /cdrom/paranoid/disk.sh
+d-i partman-auto/method string regular
+d-i partman-auto/choose_recipe select atomic
+d-i partman-lvm/device_remove_lvm boolean true
+d-i partman-md/device_remove_md boolean true
+d-i partman-lvm/confirm boolean true
+d-i partman-lvm/confirm_nooverwrite boolean true
+d-i partman-partitioning/confirm_write_new_label boolean true
+d-i partman/choose_partition select finish
+d-i partman/confirm boolean true
+d-i partman/confirm_nooverwrite boolean true
+d-i partman-efi/non_efi_system boolean true
+
+# Hors ligne : paquets pris sur l'ISO ; sources Debian en ligne écrites par paranoid.postinst.
+d-i apt-setup/use_mirror boolean false
+d-i apt-setup/cdrom/set-first boolean false
+d-i apt-setup/cdrom/set-next boolean false
+d-i apt-setup/cdrom/set-failed boolean false
+d-i apt-setup/non-free-firmware boolean true
+d-i apt-setup/services-select multiselect
+d-i mirror/country string manual
+d-i mirror/http/hostname string deb.debian.org
+d-i mirror/http/directory string /debian
+d-i mirror/http/proxy string
+
+tasksel tasksel/first multiselect
+d-i pkgsel/run_tasksel boolean false
+d-i pkgsel/upgrade select none
+d-i pkgsel/update-policy select none
+popularity-contest popularity-contest/participate boolean false
+
+d-i grub-installer/only_debian boolean true
+d-i grub-installer/with_other_os boolean false
+
+d-i finish-install/reboot_in_progress note
+d-i cdrom-detect/eject boolean true

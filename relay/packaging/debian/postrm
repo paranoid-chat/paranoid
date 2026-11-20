@@ -6,6 +6,7 @@ fi
 if [ "$1" = purge ]; then
 	# Efface la clé TLS et la base : l'empreinte de ce relais est perdue.
 	rm -rf /etc/paranoid-relay /var/lib/paranoid-relay
+	rm -f /etc/issue.d/paranoid-relay.issue
 	if [ -f /etc/ssh/sshd_config.d/00-paranoid-relay.conf ]; then
 		rm -f /etc/ssh/sshd_config.d/00-paranoid-relay.conf /etc/ssh/sshd_config.d/00-paranoid-relay.conf.prev
 		systemctl reload-or-restart ssh.service >/dev/null 2>&1 || true

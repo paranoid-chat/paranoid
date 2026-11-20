@@ -1,0 +1,12 @@
+openssh-server
+sudo
+nftables
+whiptail
+curl
+ca-certificates
+openssl
+unattended-upgrades
+console-setup
+kbd
+ifupdown
+paranoid-relay
