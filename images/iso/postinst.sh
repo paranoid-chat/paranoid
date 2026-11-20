@@ -1,5 +1,5 @@
 #!/bin/sh
-# Exécuté dans le système installé à la fin de l'installation (simple-cdd).
+# Exécuté dans le système installé (preseed/late_command), après l'installation des paquets du relais.
 set -e
 
 # Sources APT en ligne : l'installation s'est faite depuis l'ISO, sans réseau.

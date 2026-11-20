@@ -103,8 +103,8 @@ jobs:
       - name: Image Raspberry Pi (arm64)
         run: |
           v=${{ needs.prepare.outputs.version }}
-          sudo apt-get update -q
-          sudo apt-get install -y -q qemu-user-static binfmt-support xz-utils >/dev/null
+          # Émulation arm64 pour le chroot (binfmt_misc, interpréteur chargé à l'enregistrement).
+          docker run --privileged --rm tonistiigi/binfmt --install arm64
           sudo bash images/pi/build.sh "$v" "out/paranoid-relay_${v}_arm64.deb" out
       - name: Envoi dans la release
         run: |

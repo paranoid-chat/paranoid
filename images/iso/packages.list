@@ -9,4 +9,3 @@ unattended-upgrades
 console-setup
 kbd
 ifupdown
-paranoid-relay
