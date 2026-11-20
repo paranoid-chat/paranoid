@@ -61,7 +61,7 @@ Android 13 minimum.
 
 ## Prochaines étapes
 
-Image ISO Debian amd64 du relais, qui embarque le paquet `paranoid-relay` : installation automatique après confirmation de l'effacement du disque, assistant au premier démarrage, `unattended-upgrades`, publication dans un dépôt public séparé.
+Images du relais 1.2.0 (release `relay-v1.2.0`, à tester) : ISO amd64 et image Raspberry Pi, assistant complet au premier démarrage (détails dans `relay/README.md`, section « Images prêtes à l'emploi »).
 
 ---
 

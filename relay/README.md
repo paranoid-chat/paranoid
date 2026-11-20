@@ -19,7 +19,7 @@ La CI construit `paranoid-relay_VERSION_amd64.deb` et `_arm64.deb` (artefact « 
 | Contenu | Rôle |
 |---|---|
 | `/usr/bin/relayd` | Binaire statique |
-| `/usr/sbin/paranoid-relay` | Administration : `config`, `info`, `status`, `apply`, `import`, `newcert`, `announce [remove]` |
+| `/usr/sbin/paranoid-relay` | Administration : `config`, `info`, `status`, `apply`, `import`, `newcert`, `announce [remove]`, `firstboot` (images seulement) |
 | `paranoid-relay.service` | Service durci : utilisateur système `paranoid-relay`, seule capacité `CAP_NET_BIND_SERVICE` (port 443 possible), système en lecture seule sauf `/var/lib/paranoid-relay`, filtre d'appels système (`systemd-analyze security` : 1.5) |
 | `paranoid-relay-announce.timer` | Toutes les heures (et 5 min après le démarrage), si `ANNOUNCE=yes` : `paranoid-relay announce` en utilisateur `paranoid-relay`, service durci séparé de `relayd` |
 | `paranoid-relay-firewall.service` | Charge `/etc/paranoid-relay/firewall.nft` (table `inet paranoid_relay`, séparée des règles existantes), rechargée après `nftables.service` |
@@ -41,6 +41,39 @@ L'assistant (français ou anglais) demande le port local, l'adresse et le port p
 - **Retour arrière** : lancé en SSH, l'assistant demande d'ouvrir une nouvelle connexion puis de taper `OK` dans les 120 s ; sans réponse, `relay.conf`, le pare-feu et SSH reviennent à leur état précédent.
 - **Annuaire public** : l'assistant propose (Oui par défaut sur une nouvelle installation, Non pour un relais mis à jour depuis 1.0.0) de publier le relais sur getparanoid.fr, avec un nom au choix. Sont publiés : nom, adresse et port publics, IP d'envoi, empreinte, version, heure du dernier signal. Le signal est signé par la clé TLS du relais ; le site vérifie la signature et que l'adresse publique correspond à l'IP d'envoi (détails dans `../site/README.md`). À la fin de l'assistant, le premier signal part tout de suite et le résultat s'affiche (« enregistré : … » ou l'erreur) ; ensuite, le timer l'envoie toutes les heures sans intervention. Répondre Non retire le relais de l'annuaire. `relayd` lui-même ne fait toujours aucune requête sortante.
 - `apt remove` retire le relais de l'annuaire, l'arrête et garde clé et base ; `apt purge` les efface (l'empreinte est perdue).
+
+## Images prêtes à l'emploi (ISO amd64, Raspberry Pi)
+
+Workflow `.github/workflows/images.yml` (sources dans `images/`) : à chaque nouvelle version de `relay/packaging/VERSION`, une release **`relay-vVERSION`** (jamais « latest » : le lien de l'APK ne change pas) avec :
+
+| Fichier | Pour |
+|---|---|
+| `paranoid-relay-VERSION-amd64.iso` | PC ou VM amd64, BIOS ou UEFI (Secure Boot compris : chargeur Debian signé) |
+| `paranoid-relay-VERSION-raspberrypi-arm64.img.xz` | Raspberry Pi 3, 4, 5, 400, Zero 2 W (carte SD de 8 Go minimum, 16 Go conseillés) |
+| `paranoid-relay_VERSION_amd64.deb`, `_arm64.deb` + `SHA256SUMS` | Debian existante |
+
+Les deux images se construisent en parallèle et sont envoyées dans une release brouillon, publiée quand tout est prêt (pas d'artefacts GitHub : ils dépasseraient le quota). `workflow_dispatch` avec « Remplacer » reconstruit une version déjà publiée.
+
+**ISO** (`images/iso/build.sh`, conteneur `debian:trixie`) : remaster de la netinst officielle de Debian 13 (somme SHA-256 vérifiée), installation **sans réseau**.
+
+- `/paranoid/debs` : `paranoid-relay` et les paquets de `packages.list` avec leurs dépendances (version ponctuelle de trixie, comme l'ISO).
+- Menus BIOS et UEFI remplacés : *Installer le relais Paranoid (français)* / *Install the Paranoid relay (English)*, aucune entrée par défaut, attente sans délai.
+- `preseed.cfg` : installation automatique, root verrouillé, aucun compte, partitionnement automatique, puis `late_command` (`dpkg -i` des paquets, `postinst.sh` : sources APT en ligne, `unattended-upgrades`, IPv6 désactivé, SSH coupé, assistant activé).
+- `disk.sh` (`partman/early_command`) : liste des disques sans le support d'installation, puis **taper `EFFACER` (`ERASE`)** ; toute autre réponse ramène au choix du disque.
+- Le certificat TLS est généré pendant l'installation, sur la machine.
+
+**Raspberry Pi** (`images/pi/build.sh`, root sur le runner, émulation arm64 par binfmt) : Raspberry Pi OS Lite 64 bits (dernière version, somme vérifiée), paquet installé dans un chroot, `userconfig.service` masqué (pas de création de compte de Raspberry Pi OS), cloud-init limité à l'agrandissement (`users: []`, réseau et nom non gérés), SSH coupé. Le certificat n'est jamais dans l'image : il est créé au premier démarrage.
+
+**Premier démarrage** (les deux images) : `paranoid-relay-firstboot.service` (présent si `/etc/paranoid-relay/firstboot` existe) lance `paranoid-relay firstboot` sur l'écran principal (tty1), avant l'invite de connexion. Il faut un écran et un clavier.
+
+1. Langue (le clavier suit : AZERTY pour le français, QWERTY US pour l'anglais).
+2. Nom de la machine.
+3. Réseau Ethernet : DHCP ou IP fixe (adresse/préfixe, passerelle, DNS) ; `ifupdown` sur l'ISO, NetworkManager sur le Raspberry Pi.
+4. Compte d'administration (console, `sudo`, et SSH si activé) : mot de passe de 14 caractères minimum, 3 types de caractères ; root reste verrouillé.
+5. L'assistant du relais : port, adresse publique (proposée d'après `getparanoid.fr/relais.php?format=myip`), port public, plafonds, pare-feu (`full` par défaut), SSH (`off` par défaut, ou clé, ou mot de passe durci), annuaire.
+6. Écran final : URL, empreinte et redirection de port à faire sur la box. URL et empreinte restent affichées au-dessus de l'invite de connexion (`/etc/issue.d/paranoid-relay.issue`).
+
+*Annuler* à n'importe quelle étape recommence l'assistant depuis la langue. Une fois terminé, il ne se relance plus (`paranoid-relay config` reste disponible).
 
 ## Compiler à la main (sur ton PC)
 
