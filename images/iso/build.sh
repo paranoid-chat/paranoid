@@ -20,6 +20,10 @@ cp "$here"/profiles/* "$work/profiles/"
 cp "$deb" "$work/local/"
 cd "$work"
 
+# Trace des téléchargements du miroir (diagnostic en cas d'erreur 404).
+f=$(python3 -c 'import simple_cdd.tools.mirror_download as m; print(m.__file__)')
+sed -i 's/^\([[:space:]]*\)request.urlretrieve(url, filename=output)/\1print("GET", url, flush=True)\n&/' "$f"
+
 build-simple-cdd --force-root --verbose --dist trixie \
 	--profiles paranoid --auto-profiles paranoid \
 	--local-packages "$work/local" \

@@ -2,6 +2,8 @@ name: Images du relais
 
 # ISO Debian amd64 et image Raspberry Pi (arm64) du relais, publiées dans une release
 # « relay-vVERSION » qui ne devient jamais « latest » (le lien de l'APK reste valable).
+# Les deux images se construisent en parallèle et sont envoyées dans une release brouillon,
+# publiée quand les deux sont prêtes (pas d'artefacts : ils dépasseraient le quota).
 on:
   push:
     branches: [main]
@@ -16,93 +18,126 @@ on:
 permissions:
   contents: write
 
+env:
+  GH_TOKEN: ${{ github.token }}
+
 jobs:
-  images:
+  prepare:
     runs-on: ubuntu-latest
-    timeout-minutes: 150
-    env:
-      GH_TOKEN: ${{ github.token }}
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      build: ${{ steps.v.outputs.build }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Version et release existante
+      - name: Version et release brouillon
         id: v
         run: |
           v=$(cat relay/packaging/VERSION)
           echo "version=$v" >> "$GITHUB_OUTPUT"
-          if gh release view "relay-v$v" >/dev/null 2>&1; then
-            if [ "${{ github.event_name }}" = workflow_dispatch ] && [ "${{ inputs.replace }}" = true ]; then
-              echo "build=yes" >> "$GITHUB_OUTPUT"
-            else
-              echo "Release relay-v$v déjà publiée : augmenter relay/packaging/VERSION pour en publier une nouvelle."
+          tag=relay-v$v
+          if gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null | grep -q false; then
+            if [ "${{ github.event_name }}" != workflow_dispatch ] || [ "${{ inputs.replace }}" != true ]; then
+              echo "Release $tag déjà publiée : augmenter relay/packaging/VERSION pour en publier une nouvelle."
               echo "build=no" >> "$GITHUB_OUTPUT"
+              exit 0
             fi
-          else
-            echo "build=yes" >> "$GITHUB_OUTPUT"
           fi
+          gh release view "$tag" >/dev/null 2>&1 && gh release delete "$tag" --yes --cleanup-tag
+          gh release create "$tag" --draft --target "$GITHUB_SHA" --title "Relais Paranoid $v" --notes "En cours de construction."
+          echo "build=yes" >> "$GITHUB_OUTPUT"
 
+  iso:
+    needs: prepare
+    if: needs.prepare.outputs.build == 'yes'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        if: steps.v.outputs.build == 'yes'
         with:
           go-version-file: relay/go.mod
           cache-dependency-path: relay/go.sum
-
       - name: Paquets .deb
-        if: steps.v.outputs.build == 'yes'
         working-directory: relay
         env:
           CGO_ENABLED: "0"
         run: |
-          v=${{ steps.v.outputs.version }}
+          v=${{ needs.prepare.outputs.version }}
           mkdir -p ../out
           for arch in amd64 arm64; do
             GOOS=linux GOARCH=$arch go build -trimpath -ldflags "-s -w -X main.version=$v" -o /tmp/relayd-$arch .
             packaging/build-deb.sh $arch /tmp/relayd-$arch ../out
           done
-          ls -l ../out
-
-      - name: Place disque
-        if: steps.v.outputs.build == 'yes'
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-          df -h /
-
       - name: ISO amd64 (Debian 13, installeur hors ligne)
-        if: steps.v.outputs.build == 'yes'
         run: |
-          v=${{ steps.v.outputs.version }}
+          v=${{ needs.prepare.outputs.version }}
           docker run --rm -v "$PWD:/w" -w /w debian:trixie \
             sh images/iso/build.sh "$v" "/w/out/paranoid-relay_${v}_amd64.deb" /w/out
-
-      - name: Image Raspberry Pi (arm64)
-        if: steps.v.outputs.build == 'yes'
+      - name: Envoi dans la release
         run: |
-          v=${{ steps.v.outputs.version }}
+          cd out
+          sudo chown "$(id -u)" ./*
+          sha256sum ./*.iso ./*.deb | sed 's#  \./#  #' > SHA256SUMS.iso
+          gh release upload "relay-v${{ needs.prepare.outputs.version }}" ./*.iso ./*.deb SHA256SUMS.iso --clobber
+
+  pi:
+    needs: prepare
+    if: needs.prepare.outputs.build == 'yes'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: relay/go.mod
+          cache-dependency-path: relay/go.sum
+      - name: Paquet .deb arm64
+        working-directory: relay
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          v=${{ needs.prepare.outputs.version }}
+          mkdir -p ../out
+          GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-s -w -X main.version=$v" -o /tmp/relayd-arm64 .
+          packaging/build-deb.sh arm64 /tmp/relayd-arm64 ../out
+      - name: Image Raspberry Pi (arm64)
+        run: |
+          v=${{ needs.prepare.outputs.version }}
           sudo apt-get update -q
           sudo apt-get install -y -q qemu-user-static binfmt-support xz-utils >/dev/null
           sudo bash images/pi/build.sh "$v" "out/paranoid-relay_${v}_arm64.deb" out
-
-      - name: Release GitHub
-        if: steps.v.outputs.build == 'yes' && github.ref == 'refs/heads/main'
+      - name: Envoi dans la release
         run: |
-          v=${{ steps.v.outputs.version }}
           cd out
           sudo chown "$(id -u)" ./*
-          sha256sum ./*.iso ./*.img.xz ./*.deb | sed 's#  \./#  #' > SHA256SUMS
+          sha256sum ./*.img.xz | sed 's#  \./#  #' > SHA256SUMS.pi
+          gh release upload "relay-v${{ needs.prepare.outputs.version }}" ./*.img.xz SHA256SUMS.pi --clobber
+
+  publish:
+    needs: [prepare, iso, pi]
+    if: needs.prepare.outputs.build == 'yes' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Somme de contrôle et publication
+        run: |
+          v=${{ needs.prepare.outputs.version }}
+          tag=relay-v$v
+          mkdir rel && cd rel
+          gh release download "$tag" -R "$GITHUB_REPOSITORY" -p 'SHA256SUMS.*'
+          cat SHA256SUMS.iso SHA256SUMS.pi > SHA256SUMS
           cat SHA256SUMS
           {
             echo "Relais Paranoid $v (commit ${GITHUB_SHA::7})."
             echo
             echo "- \`paranoid-relay-$v-amd64.iso\` : PC ou VM amd64 (BIOS ou UEFI). Installation hors ligne : le menu de démarrage n'a pas de choix par défaut, l'installeur demande le disque puis de taper EFFACER (ERASE) avant d'effacer ; au premier démarrage, un assistant règle tout."
-            echo "- \`paranoid-relay-$v-raspberrypi-arm64.img.xz\` : Raspberry Pi 3, 4, 5 (Raspberry Pi OS Lite 64 bits). À écrire sur une carte SD (Raspberry Pi Imager, « image personnalisée », ou balenaEtcher) ; au premier démarrage, avec écran et clavier, le même assistant."
+            echo "- \`paranoid-relay-$v-raspberrypi-arm64.img.xz\` : Raspberry Pi 3, 4, 5 (Raspberry Pi OS Lite 64 bits). À écrire sur une carte SD (Raspberry Pi Imager, image personnalisée) ; au premier démarrage, avec écran et clavier, le même assistant."
             echo "- \`paranoid-relay_${v}_amd64.deb\`, \`paranoid-relay_${v}_arm64.deb\` : pour une Debian existante (\`apt install ./…deb\` puis \`paranoid-relay config\`)."
             echo
             echo '```'
             cat SHA256SUMS
             echo '```'
           } > notes.md
-          if gh release view "relay-v$v" >/dev/null 2>&1; then
-            gh release delete "relay-v$v" --yes --cleanup-tag
-          fi
-          gh release create "relay-v$v" ./*.iso ./*.img.xz ./*.deb SHA256SUMS --target "$GITHUB_SHA" \
-            --title "Relais Paranoid $v" --notes-file notes.md --latest=false
+          gh release upload "$tag" -R "$GITHUB_REPOSITORY" SHA256SUMS --clobber
+          gh release delete-asset "$tag" SHA256SUMS.iso -R "$GITHUB_REPOSITORY" --yes
+          gh release delete-asset "$tag" SHA256SUMS.pi -R "$GITHUB_REPOSITORY" --yes
+          gh release edit "$tag" -R "$GITHUB_REPOSITORY" --notes-file notes.md --draft=false --latest=false
