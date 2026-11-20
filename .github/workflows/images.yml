@@ -42,7 +42,8 @@ jobs:
               exit 0
             fi
           fi
-          gh release view "$tag" >/dev/null 2>&1 && gh release delete "$tag" --yes --cleanup-tag
+          if gh release view "$tag" >/dev/null 2>&1; then gh release delete "$tag" --yes; fi
+          git push -q origin ":refs/tags/$tag" 2>/dev/null || true
           gh release create "$tag" --draft --target "$GITHUB_SHA" --title "Relais Paranoid $v" --notes "En cours de construction."
           echo "build=yes" >> "$GITHUB_OUTPUT"
 
