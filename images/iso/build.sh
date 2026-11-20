@@ -11,7 +11,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
-apt-get install -y -q --no-install-recommends simple-cdd xorriso ca-certificates >/dev/null
+apt-get install -y -q simple-cdd distro-info-data xorriso ca-certificates >/dev/null
 
 work=/tmp/paranoid-iso
 rm -rf "$work"
