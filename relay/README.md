@@ -72,7 +72,7 @@ Les deux images se construisent en parallèle et sont envoyées dans une release
 3. IP fixe (pas de DHCP) : adresse, masque (`255.255.255.0` ou `24`), passerelle, DNS ; `ifupdown` sur l'ISO, NetworkManager sur le Raspberry Pi.
 4. Raspberry Pi seulement : mot de passe root (14 caractères minimum, 3 types). Seul compte : root.
 5. L'assistant du relais : port, adresse publique (proposée d'après `getparanoid.fr/relais.php?format=myip`), port public, plafonds, pare-feu (`full` par défaut), SSH (désactivé par défaut, ou clé pour root : `PermitRootLogin prohibit-password`), annuaire.
-6. Écran final : URL, empreinte et redirection de port à faire sur la box. URL et empreinte restent affichées au-dessus de l'invite de connexion (`/etc/issue.d/paranoid-relay.issue`).
+6. Écran final : URL, empreinte et port à ouvrir sur le routeur/box. URL et empreinte restent affichées au-dessus de l'invite de connexion (`/etc/issue.d/paranoid-relay.issue`).
 
 *Annuler* à n'importe quelle étape recommence l'assistant au début. Une fois terminé, il ne se relance plus (`paranoid-relay config` reste disponible).
 

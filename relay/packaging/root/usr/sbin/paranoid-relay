@@ -673,12 +673,12 @@ firstboot() {
 URL : $(url)
 Empreinte : $(fingerprint)
 
-Sur la box : rediriger le port TCP ${PUBLIC_PORT:-$PORT} vers $(local_ip):$PORT." "The relay is ready.
+Vérifiez que votre routeur/box a le port ${PUBLIC_PORT:-$PORT} ouvert (vers $(local_ip):$PORT)." "The relay is ready.
 
 URL: $(url)
 Fingerprint: $(fingerprint)
 
-On the router: forward TCP port ${PUBLIC_PORT:-$PORT} to $(local_ip):$PORT.")" 14 78 || true
+Check that your router has port ${PUBLIC_PORT:-$PORT} open (to $(local_ip):$PORT).")" 14 78 || true
 	clear
 }
 
