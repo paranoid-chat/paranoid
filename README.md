@@ -61,7 +61,7 @@ Android 13 minimum.
 
 ## Prochaines étapes
 
-Images du relais 1.2.0 (release `relay-v1.2.0`, à tester) : ISO amd64 et image Raspberry Pi, assistant complet au premier démarrage (détails dans `relay/README.md`, section « Images prêtes à l'emploi »).
+Images du relais 1.2.1 (release `relay-v1.2.1`, à tester) : ISO amd64 et image Raspberry Pi, assistant complet au premier démarrage (détails dans `relay/README.md`, section « Images prêtes à l'emploi »).
 
 ---
 
