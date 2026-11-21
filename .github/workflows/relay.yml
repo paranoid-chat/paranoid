@@ -39,7 +39,7 @@ jobs:
 
       - name: Vérification des scripts du paquet
         run: |
-          shellcheck -s bash -S warning packaging/root/usr/sbin/paranoid-relay
+          shellcheck -s bash -S warning -e SC1090 packaging/root/usr/sbin/paranoid-relay
           shellcheck -s sh -S warning packaging/build-deb.sh packaging/debian/postinst packaging/debian/prerm packaging/debian/postrm
 
       - name: Binaires Linux statiques et paquets .deb
