@@ -122,7 +122,6 @@ func TestPairRejections(t *testing.T) {
 			t.Fatalf("bloc altéré à l'octet %d accepté", i)
 		}
 	}
-	// Quelqu'un qui a vu le QR annonce l'ik de la victime avec sa propre clé : signature refusée.
 	mallory := newParty(t)
 	forged := p
 	forged.XK = mallory.x.PublicKey().Bytes()

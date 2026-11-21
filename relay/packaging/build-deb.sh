@@ -1,6 +1,4 @@
 #!/bin/sh
-# build-deb.sh ARCH RELAYD SORTIE : construit paranoid-relay_VERSION_ARCH.deb
-# ARCH au format Debian (amd64, arm64), RELAYD = binaire statique compilé.
 set -eu
 arch=$1 relayd=$2 out=$3
 here=$(cd "$(dirname "$0")" && pwd)

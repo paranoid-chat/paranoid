@@ -1,34 +1,17 @@
-# Configuration du relais Paranoid.
-# Modifiée par « paranoid-relay config » ; après une modification à la main :
-#   paranoid-relay apply
-
-# Langue de l'outil d'administration : fr ou en
 LANG_UI=fr
 
-# Port TCP d'écoute du relais
 PORT=8443
 
-# Adresse donnée aux utilisateurs de l'appli : IP publique ou nom DNS, et port
-# vu depuis Internet (différent de PORT si la box redirige, ex. 443 -> 8443)
 PUBLIC_HOST=
 PUBLIC_PORT=
 
-# Taille maximale de la base et espace disque à laisser libre
-# (suffixes K, M, G, T ; 0 = sans limite)
 MAX_DB=1G
 MIN_FREE=2G
 
-# Pare-feu nftables (table inet paranoid_relay) :
-#   ratelimit : limite seulement les connexions au relais (et à SSH si durci)
-#   full      : bloque tout sauf le relais et SSH
-#   off       : aucune règle
 FIREWALL=ratelimit
 
-# SSH : keep (ne pas toucher), key (clé uniquement), password (mot de passe durci), off
 SSH_MODE=keep
 SSH_USER=
 
-# Annuaire public getparanoid.fr : signal signé toutes les heures (yes ou no)
-# et nom affiché (lettres, chiffres, . _ -)
 ANNOUNCE=yes
 RELAY_NAME=

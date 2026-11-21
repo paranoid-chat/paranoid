@@ -1,10 +1,5 @@
 package app.paranoid.core
 
-/**
- * Opérations de messagerie, indépendantes d'Android (même logique que relaycli).
- * [persist] est appelé à chaque changement d'état à conserver ; il doit écrire de façon atomique.
- * Toutes les méthodes font du réseau : à appeler hors du fil principal.
- */
 class Messenger(
     val state: AppState,
     private val persist: (AppState) -> Unit,
@@ -39,10 +34,6 @@ class Messenger(
         return MyBox(relay, boxId, writeId, readSeed)
     }
 
-    /**
-     * Invitant : crée (ou reprend) le contact [name] en attente, avec sa boîte et un secret à usage
-     * unique, et renvoie l'invitation à montrer en QR à ce contact uniquement.
-     */
     @Synchronized
     fun invite(name: String): String {
         val n = checkName(name)
@@ -55,10 +46,6 @@ class Messenger(
         return Invite(state.ik, state.xk, listOf(InviteRelay(box.relay.url, box.relay.fp, box.writeId)), secret).encode()
     }
 
-    /**
-     * Celui qui scanne : crée sa boîte pour [name], dépose le bloc d'appairage dans la boîte de
-     * l'invitant, puis enregistre le contact, prêt à écrire. Rien n'est enregistré si l'envoi échoue.
-     */
     @Synchronized
     fun join(name: String, invite: String): Contact {
         val n = checkName(name)
@@ -84,7 +71,6 @@ class Messenger(
         return c
     }
 
-    /** Invitant : applique un bloc d'appairage valide reçu dans la boîte de [c]. */
     private fun completePairing(c: Contact, blob: ByteArray): Boolean {
         val secret = c.pairSecret ?: return false
         val p = Pairing.open(state.x25519Priv, state.ik, secret, blob) ?: return false
@@ -94,11 +80,10 @@ class Messenger(
         c.xk = p.xk
         c.their = TheirBox(p.relay, p.writeId)
         secret.fill(0)
-        c.pairSecret = null // usage unique
+        c.pairSecret = null
         return true
     }
 
-    /** Envoie un message. Le message est ajouté à l'historique même si l'envoi échoue (statut FAILED). */
     @Synchronized
     fun send(name: String, text: String): ChatMessage {
         val c = contact(name)
@@ -113,7 +98,6 @@ class Messenger(
         val blob = session(c, e).encrypt(e, encodeInner(Plain(TYPE_TEXT, id, ts, body)))
         val msg = ChatMessage(id, true, ts, text, MessageStatus.SENDING)
         c.messages.add(msg)
-        // Enregistré avant le dépôt : une clé de message n'est jamais réutilisée.
         save()
         try {
             clientFor(their.relay).deposit(their.writeId, blob)
@@ -127,7 +111,6 @@ class Messenger(
         return msg
     }
 
-    /** Relève toutes les boîtes, déchiffre, enregistre puis acquitte. */
     @Synchronized
     fun poll(): PollResult {
         val received = ArrayList<Pair<Contact, ChatMessage>>()
@@ -144,12 +127,9 @@ class Messenger(
         return PollResult(received, rejected, errors)
     }
 
-    // ---------- historique local ----------
-
     private fun expired(m: ChatMessage, cutoff: Long) =
         m.ts < cutoff && m.status != MessageStatus.ALERT && m.status != MessageStatus.RELAY_CHANGE
 
-    /** Nombre de messages qu'effacerait une conservation de [seconds] secondes (0 = pour toujours). */
     @Synchronized
     fun countOlderThan(seconds: Long, now: Long = System.currentTimeMillis() / 1000): Int {
         if (seconds <= 0) return 0
@@ -157,11 +137,6 @@ class Messenger(
         return state.contacts.values.sumOf { c -> c.messages.count { expired(it, cutoff) } }
     }
 
-    /**
-     * Efface de ce téléphone les messages plus anciens que la durée choisie. Les cartes « bouton
-     * rouge » et « changement de relais » sont gardées : elles disent pourquoi la conversation est
-     * fermée. Renvoie le nombre de messages effacés.
-     */
     @Synchronized
     fun purgeHistory(now: Long = System.currentTimeMillis() / 1000): Int {
         val seconds = state.historySeconds
@@ -177,7 +152,6 @@ class Messenger(
         return n
     }
 
-    /** Change la durée de conservation et applique tout de suite la purge. */
     @Synchronized
     fun setHistory(seconds: Long): Int {
         require(seconds >= 0)
@@ -196,7 +170,6 @@ class Messenger(
             if (recs.isEmpty()) return rejected
             for (r in recs) {
                 if (c.ik == null) {
-                    // Appairage pas encore terminé : seul un bloc d'appairage valide est accepté.
                     if (!completePairing(c, r.blob)) rejected++
                     box.lastSeq = r.seq
                     continue
@@ -205,8 +178,6 @@ class Messenger(
                     val e = env(c)
                     val p = decodeInner(session(c, e).decrypt(e, r.blob))
                     val id = b64(p.id)
-                    // Horodatage de l'expéditeur, jamais dans le futur : un message ne peut pas échapper
-                    // à la limite de l'historique en annonçant une date lointaine.
                     val ts = minOf(p.ts, System.currentTimeMillis() / 1000)
                     if ((p.type == TYPE_TEXT || p.type == TYPE_ALERT || p.type == TYPE_RELAY_CHANGE) && id !in c.seen) {
                         c.seen.addLast(id)
@@ -230,19 +201,12 @@ class Messenger(
                 }
                 box.lastSeq = r.seq
             }
-            // Enregistré avant l'acquittement : en cas d'échec de l'acquittement, rien n'est perdu.
             save()
             client.ack(box.boxId, box.readSeed, box.lastSeq)
             if (!more) return rejected
         }
     }
 
-    /**
-     * Bouton rouge ([TYPE_ALERT]) ou changement de relais ([TYPE_RELAY_CHANGE]) : chiffre une
-     * alerte pour chaque contact, puis les dépose en parallèle. Rend la main au plus tard après
-     * [timeoutMs] : l'effacement qui suit ne doit jamais attendre le réseau. Renvoie le nombre
-     * d'alertes acceptées par le relais.
-     */
     @Synchronized
     fun sendAlerts(timeoutMs: Long = 5_000, type: Byte = TYPE_ALERT): Int {
         require(type == TYPE_ALERT || type == TYPE_RELAY_CHANGE)
@@ -254,7 +218,6 @@ class Messenger(
                 val e = env(c)
                 jobs.add(their to session(c, e).encrypt(e, encodeInner(Plain(type, randomBytes(16), System.currentTimeMillis() / 1000, ByteArray(0)))))
             } catch (ex: Exception) {
-                // Une session cassée ne doit pas empêcher les autres alertes.
             }
         }
         if (jobs.isEmpty()) return 0
@@ -275,14 +238,12 @@ class Messenger(
         return ok.get()
     }
 
-    /** Réinitialise la session chiffrée (à faire des deux côtés). */
     @Synchronized
     fun resetSession(name: String) {
         contact(name).session = null
         save()
     }
 
-    /** Supprime le contact, son historique et sa boîte sur le relais. */
     @Synchronized
     fun removeContact(name: String) {
         val c = contact(name)
@@ -292,7 +253,6 @@ class Messenger(
     }
 
     companion object {
-        /** Teste le relais, puis crée une nouvelle identité. */
         fun createIdentity(relay: RelayRef, clientFor: (RelayRef) -> RelayClient = { RelayClient(it) }): AppState {
             clientFor(relay).check()
             return AppState.newIdentity(relay)

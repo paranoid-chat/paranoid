@@ -1,24 +1,5 @@
 package main
 
-// Appairage en un seul scan (MESSAGES.md, « Appairage »).
-//
-// L'invitant montre un QR qui contient ses clés publiques, la boîte qu'il réserve au contact et
-// un secret aléatoire à usage unique. Celui qui scanne crée sa propre boîte pour l'invitant,
-// puis dépose dans la boîte de l'invitant un bloc d'appairage :
-//
-//   version = 3 (1) | X25519 éphémère (32) | AES-256-GCM(contenu 1999 o) + tag (16)
-//
-// Contenu : ik (32) | xk (32) | write_id (16) | empreinte du relais (32) | longueur de l'URL (2) |
-//           URL du relais | signature Ed25519 (64) | zéros
-//
-// Clé et nonce = HKDF-SHA256(X25519(éphémère, xk invitant) || secret,
-//                            sel = ik invitant || éphémère, info = "relay-pair-v1") → 32 + 12 octets.
-// Données associées = "relay-pair-v1" || ik invitant || éphémère.
-// La signature, par la clé d'identité de celui qui scanne, couvre
-//   "relay-pair-v1/sig" || ik invitant || SHA-256(secret) || contenu avant la signature :
-// sans elle, quelqu'un qui aurait photographié le QR pourrait annoncer l'ik d'un autre avec sa
-// propre clé xk, et l'empreinte affichée (calculée sur ik) ne le trahirait pas.
-
 import (
 	"bytes"
 	"crypto/ecdh"
@@ -33,7 +14,7 @@ import (
 
 const (
 	pairVersion  = 3
-	pairPlainLen = BlobSize - 1 - 32 - tagLen // 1999
+	pairPlainLen = BlobSize - 1 - 32 - tagLen
 	pairInfo     = "relay-pair-v1"
 	pairSigCtx   = "relay-pair-v1/sig"
 	SecretLen    = 32
@@ -42,13 +23,12 @@ const (
 
 var ErrPair = errors.New("bloc d'appairage invalide")
 
-// PairPayload est ce que celui qui scanne transmet à l'invitant.
 type PairPayload struct {
 	IK  []byte
 	XK  []byte
-	W   []byte // write_id de la boîte créée pour l'invitant
-	FP  []byte // empreinte du relais de cette boîte
-	URL string // relais de cette boîte
+	W   []byte
+	FP  []byte
+	URL string
 }
 
 func (p PairPayload) body() ([]byte, error) {
@@ -74,7 +54,6 @@ func pairAEAD(shared, secret, inviterIK, ePub []byte) ([]byte, []byte, error) {
 	return okm[:32], okm[32:], nil
 }
 
-// SealPair construit le bloc d'appairage de celui qui scanne, pour l'invitant.
 func SealPair(me ed25519.PrivateKey, inviterIK, inviterXK, secret []byte, p PairPayload) ([]byte, error) {
 	if len(secret) != SecretLen || len(inviterIK) != 32 {
 		return nil, ErrPair
@@ -116,7 +95,6 @@ func SealPair(me ed25519.PrivateKey, inviterIK, inviterXK, secret []byte, p Pair
 	return blob, nil
 }
 
-// OpenPair déchiffre et vérifie un bloc d'appairage reçu par l'invitant.
 func OpenPair(myX *ecdh.PrivateKey, myIK, secret, blob []byte) (PairPayload, error) {
 	var p PairPayload
 	if len(blob) != BlobSize || blob[0] != pairVersion || len(secret) != SecretLen {

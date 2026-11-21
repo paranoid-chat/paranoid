@@ -14,13 +14,11 @@ import (
 	"strings"
 )
 
-// RelayRef identifie un relais : URL et empreinte SHA-256 de son certificat.
 type RelayRef struct {
 	URL string `json:"url"`
 	FP  []byte `json:"fp"`
 }
 
-// MyBox est la boîte que j'ai créée pour un contact : il y dépose, je relève.
 type MyBox struct {
 	Relay    RelayRef `json:"relay"`
 	BoxID    []byte   `json:"box_id"`
@@ -29,25 +27,22 @@ type MyBox struct {
 	LastSeq  uint64   `json:"last_seq"`
 }
 
-// TheirBox est la boîte du contact, où je dépose.
 type TheirBox struct {
 	Relay   RelayRef `json:"relay"`
 	WriteID []byte   `json:"write_id"`
 }
 
 type Contact struct {
-	MyBox   *MyBox    `json:"my_box,omitempty"`
-	IK      []byte    `json:"ik,omitempty"`
-	XK      []byte    `json:"xk,omitempty"`
-	Their   *TheirBox `json:"their,omitempty"`
-	Seen    []string  `json:"seen,omitempty"` // identifiants de messages récents (anti-doublon)
-	Session *Session  `json:"session,omitempty"`
-	Burned  bool      `json:"burned,omitempty"` // bouton rouge ou changement de relais reçu
-	// PairSecret est le secret à usage unique de mon invitation, effacé dès l'appairage terminé.
-	PairSecret []byte `json:"pair_secret,omitempty"`
+	MyBox      *MyBox    `json:"my_box,omitempty"`
+	IK         []byte    `json:"ik,omitempty"`
+	XK         []byte    `json:"xk,omitempty"`
+	Their      *TheirBox `json:"their,omitempty"`
+	Seen       []string  `json:"seen,omitempty"`
+	Session    *Session  `json:"session,omitempty"`
+	Burned     bool      `json:"burned,omitempty"`
+	PairSecret []byte    `json:"pair_secret,omitempty"`
 }
 
-// ensureSession prépare l'environnement du ratchet et crée la session si besoin.
 func (s *State) ensureSession(c *Contact) (*drEnv, error) {
 	e, err := newDREnv(s.IK(), s.X25519(), c.IK, c.XK)
 	if err != nil {
@@ -61,7 +56,6 @@ func (s *State) ensureSession(c *Contact) (*drEnv, error) {
 	return e, nil
 }
 
-// openBlob déchiffre un message du ratchet reçu de c.
 func (s *State) openBlob(c *Contact, blob []byte) (Plain, error) {
 	if len(blob) != BlobSize {
 		return Plain{}, ErrDecrypt
@@ -80,8 +74,6 @@ func (s *State) openBlob(c *Contact, blob []byte) (Plain, error) {
 	return decodeInnerV2(inner)
 }
 
-// State est le contenu de state.json. Ce fichier contient les clés privées en clair :
-// c'est un outil de test, l'appli Android les protégera par le Keystore.
 type State struct {
 	IdentitySeed []byte              `json:"identity_seed"`
 	X25519Priv   []byte              `json:"x25519_priv"`
@@ -97,7 +89,7 @@ func (s *State) IK() ed25519.PublicKey        { return s.Identity().Public().(ed
 func (s *State) X25519() *ecdh.PrivateKey {
 	k, err := ecdh.X25519().NewPrivateKey(s.X25519Priv)
 	if err != nil {
-		panic(err) // état corrompu
+		panic(err)
 	}
 	return k
 }
@@ -127,7 +119,6 @@ func LoadState(dir string) (*State, error) {
 	return &s, nil
 }
 
-// Save écrit l'état de façon atomique (fichier temporaire puis renommage), en 0600.
 func (s *State) Save() error {
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
@@ -140,7 +131,6 @@ func (s *State) Save() error {
 	return os.Rename(tmp, s.path)
 }
 
-// SafetyNumber est une empreinte courte d'une clé d'identité, à comparer de vive voix.
 func SafetyNumber(ik []byte) string {
 	sum := sha256.Sum256(ik)
 	h := strings.ToUpper(hex.EncodeToString(sum[:10]))
@@ -151,7 +141,6 @@ func SafetyNumber(ik []byte) string {
 	return strings.Join(parts, " ")
 }
 
-// ParseFingerprint accepte « FB:2B:… » ou de l'hexadécimal brut.
 func ParseFingerprint(s string) ([]byte, error) {
 	clean := strings.NewReplacer(":", "", " ", "").Replace(strings.TrimSpace(s))
 	b, err := hex.DecodeString(clean)
@@ -168,8 +157,6 @@ func FormatFingerprint(fp []byte) string {
 	}
 	return strings.Join(parts, ":")
 }
-
-// ---------- invitation (contenu du QR, PROTOCOL.md §6) ----------
 
 type b64url []byte
 
@@ -196,13 +183,12 @@ type inviteRelay struct {
 	W  b64url `json:"w"`
 }
 
-// Invite est le contenu du QR (version 2) : il est propre à un seul contact.
 type Invite struct {
 	V  int           `json:"v"`
 	IK b64url        `json:"ik"`
 	XK b64url        `json:"xk"`
 	R  []inviteRelay `json:"r"`
-	S  b64url        `json:"s"` // secret à usage unique de l'appairage
+	S  b64url        `json:"s"`
 }
 
 func EncodeInvite(inv Invite) (string, error) {

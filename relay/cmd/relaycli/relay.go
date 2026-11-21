@@ -1,7 +1,5 @@
 package main
 
-// Client HTTP du relais (PROTOCOL.md §3 et §4), avec épinglage du certificat.
-
 import (
 	"bytes"
 	"crypto/ed25519"
@@ -44,8 +42,7 @@ func NewRelayClient(r RelayRef) *RelayClient {
 	tr := http.DefaultTransport.(*http.Transport).Clone()
 	tr.ForceAttemptHTTP2 = true
 	tr.TLSClientConfig = &tls.Config{
-		MinVersion: tls.VersionTLS13,
-		// Pas d'autorité de certification : on vérifie nous-mêmes l'empreinte du certificat.
+		MinVersion:         tls.VersionTLS13,
 		InsecureSkipVerify: true,
 		VerifyConnection: func(cs tls.ConnectionState) error {
 			if len(cs.PeerCertificates) == 0 {

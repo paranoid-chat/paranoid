@@ -1,14 +1,12 @@
 <?php
-// Annuaire des relais Paranoid : réception des signaux signés et affichage.
-// Données dans un fichier JSON hors de la racine web (RELAYS_DATA).
 declare(strict_types=1);
 
 const RELAYS_DATA = __DIR__ . '/../../paranoid-data/relays.json';
-const RELAYS_MAX = 1000;            // relais enregistrés au maximum
-const RELAYS_ONLINE = 7200;         // « en ligne » si dernier signal < 2 h
-const RELAYS_EXPIRE = 30 * 86400;   // retiré après 30 jours sans signal
-const RELAYS_SKEW = 600;            // horloge du relais : ±10 min
-const RELAYS_RATE = 20;             // signaux par heure et par IP
+const RELAYS_MAX = 1000;
+const RELAYS_ONLINE = 7200;
+const RELAYS_EXPIRE = 30 * 86400;
+const RELAYS_SKEW = 600;
+const RELAYS_RATE = 20;
 
 function relays_load($fh): array
 {
@@ -56,7 +54,6 @@ function relays_valid_host(string $h): bool
     return strlen($h) <= 253 && (bool) preg_match('/^(?=.*[A-Za-z])[A-Za-z0-9-]{1,63}(\.[A-Za-z0-9-]{1,63})+$/', $h);
 }
 
-// Retourne [code HTTP, texte].
 function relays_announce(array $p, string $ip, int $now): array
 {
     $f = [];
@@ -80,7 +77,7 @@ function relays_announce(array $p, string $ip, int $now): array
         || strlen($f['cert']) > 4096 || strlen($f['sig']) > 512) {
         return [400, 'champ invalide'];
     }
-    $ts = (int) $f['ts']; // millisecondes
+    $ts = (int) $f['ts'];
     if (abs($now - intdiv($ts, 1000)) > RELAYS_SKEW) {
         return [400, "horloge du relais décalée de plus de 10 minutes"];
     }
@@ -88,7 +85,6 @@ function relays_announce(array $p, string $ip, int $now): array
         return [400, 'signal accepté en IPv4 seulement'];
     }
 
-    // Signature : prouve que l'expéditeur détient la clé du certificat annoncé.
     $cert = @openssl_x509_read($f['cert']);
     $pub = $cert ? @openssl_pkey_get_public($cert) : false;
     $sig = base64_decode($f['sig'], true);
@@ -101,7 +97,6 @@ function relays_announce(array $p, string $ip, int $now): array
     }
     $fp = relays_fp_format(openssl_x509_fingerprint($cert, 'sha256'));
 
-    // L'adresse publiée doit être celle d'où vient le signal.
     if ($f['action'] === 'up') {
         $ips = filter_var($f['host'], FILTER_VALIDATE_IP) ? [$f['host']] : (@gethostbynamel($f['host']) ?: []);
         if (!in_array($ip, $ips, true)) {
@@ -205,7 +200,6 @@ function relays_ago(int $s, bool $en): string
     return $en ? "$j days ago" : "il y a $j jours";
 }
 
-// Tableau HTML des relais, sans JavaScript ni ressource externe.
 function relays_render(bool $en): string
 {
     $now = time();
@@ -247,9 +241,6 @@ function relays_render(bool $en): string
     return $h . '</tbody></table></div>';
 }
 
-// Même liste en JSON pour l'appli : relais.php?format=json (ou en/relays.php?format=json) ;
-// relais.php?format=myip donne l'IP publique du demandeur à l'assistant du relais.
-// Les pages incluent ce fichier avant toute sortie : la réponse JSON remplace alors la page HTML.
 function relays_json(): void
 {
     $out = [];
@@ -275,7 +266,6 @@ if (PHP_SAPI !== 'cli' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'GET') {
         relays_json();
         exit;
     }
-    // Adresse IPv4 publique du demandeur, pour l'assistant du relais (« Adresse publique »). Rien n'est stocké.
     if ($format === 'myip') {
         header('Content-Type: text/plain; charset=utf-8');
         header('Cache-Control: no-store');

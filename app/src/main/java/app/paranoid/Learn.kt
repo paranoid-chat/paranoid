@@ -55,11 +55,6 @@ import app.paranoid.core.sha256
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/*
- * « Comprendre Paranoid » : explications hors ligne, à deux niveaux (simple, puis « En savoir
- * plus » technique), avec des schémas dessinés dans l'appli. Aucun accès réseau ici.
- */
-
 private class Topic(
     val title: String,
     val summary: String,
@@ -106,7 +101,6 @@ fun LearnScreen(ui: Ui, vm: MainViewModel) {
     }
 }
 
-/** « Mes infos en direct », accessible depuis le menu de la liste des contacts. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MyInfoScreen(ui: Ui, vm: MainViewModel) {
@@ -141,8 +135,6 @@ private fun TopicPage(t: Topic) {
         }
     }
 }
-
-// ---------- Mes infos en direct ----------
 
 @Composable
 private fun LiveInfo(ui: Ui, vm: MainViewModel) {
@@ -182,8 +174,6 @@ private fun apkSigner(ctx: Context): String = runCatching {
     val signers = info.signingInfo?.apkContentsSigners
     if (signers.isNullOrEmpty()) tr("inconnue", "unknown") else signers.joinToString("\n") { formatFingerprint(sha256(it.toByteArray())) }
 }.getOrDefault(tr("inconnue", "unknown"))
-
-// ---------- schémas ----------
 
 private enum class Kind { ME, PEER, RELAY, SECRET, PUBLIC, NEUTRAL }
 
@@ -227,7 +217,6 @@ private fun Node(text: String, kind: Kind, modifier: Modifier = Modifier) {
 @Composable
 private fun RowScope.N(text: String, kind: Kind, weight: Float = 1.3f) = Node(text, kind, Modifier.weight(weight))
 
-/** Flèche horizontale, avec une étiquette au-dessus ; [both] pour un échange dans les deux sens. */
 @Composable
 private fun RowScope.Arrow(label: String = "", both: Boolean = false, weight: Float = 1f) {
     val color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -247,7 +236,6 @@ private fun RowScope.Arrow(label: String = "", both: Boolean = false, weight: Fl
     }
 }
 
-/** Flèche vers le bas, avec une étiquette à droite. */
 @Composable
 private fun DownArrow(label: String = "") {
     val color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -262,7 +250,6 @@ private fun DownArrow(label: String = "") {
     }
 }
 
-/** Couche de chiffrement, pour les schémas « poupées russes ». */
 @Composable
 private fun Layer(title: String, kind: Kind, content: @Composable () -> Unit = {}) {
     val c = kind.color()
@@ -281,8 +268,6 @@ private fun Caption(text: String) =
 @Composable
 private fun Line(content: @Composable RowScope.() -> Unit) =
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, content = content)
-
-// ---------- contenu ----------
 
 private val TOPICS: List<Topic> get() = listOf(
     Topic(

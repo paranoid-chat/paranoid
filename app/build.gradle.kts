@@ -4,8 +4,6 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-// Signature : fournie par la CI (secrets GitHub) ou en local via les mêmes variables d'environnement.
-// Sans keystore, l'APK de release est signé avec la clé de debug (dépannage uniquement).
 val releaseKeystore: String? = System.getenv("PARANOID_KEYSTORE")
 
 android {
@@ -71,7 +69,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
-    // QR : génération (zxing core) et scan (sans Google Play Services).
     implementation("com.google.zxing:core:3.5.3")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
 }

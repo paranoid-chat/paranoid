@@ -15,12 +15,10 @@ UMask=0077
 Restart=on-failure
 RestartSec=3
 
-# Port < 1024 possible sans root (443 par exemple), et rien d'autre.
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 NoNewPrivileges=yes
 
-# Système de fichiers : tout en lecture seule sauf /var/lib/paranoid-relay.
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
@@ -34,7 +32,6 @@ ProtectHostname=yes
 ProtectProc=invisible
 ProcSubset=pid
 
-# Noyau : seulement ce dont un service réseau a besoin.
 RestrictAddressFamilies=AF_INET AF_INET6
 RestrictNamespaces=yes
 RestrictRealtime=yes

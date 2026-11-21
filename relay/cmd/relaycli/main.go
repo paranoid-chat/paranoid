@@ -1,10 +1,3 @@
-// relaycli : client de test en ligne de commande pour le relais (PROTOCOL.md, MESSAGES.md).
-//
-//	relaycli -d alice init --relay https://192.168.1.252:8443 --fp FB:2B:…
-//	relaycli -d alice invite bob        → affiche l'invitation (contenu du QR)
-//	relaycli -d bob   add alice <invitation>   → appairage envoyé à alice
-//	relaycli -d alice recv                     → appairage terminé
-//	relaycli -d bob   send alice "salut"
 package main
 
 import (
@@ -115,8 +108,6 @@ func checkName(n string) error {
 	return nil
 }
 
-// ---------- init / whoami ----------
-
 func cmdInit(dir string, args []string) error {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	relayURL := fs.String("relay", "", "URL du relais, ex. https://192.168.1.252:8443")
@@ -136,7 +127,6 @@ func cmdInit(dir string, args []string) error {
 	}
 	ref := RelayRef{URL: strings.TrimRight(*relayURL, "/"), FP: fp}
 
-	// Test de connexion : une boîte inconnue doit répondre 404, ce qui valide TLS et l'empreinte.
 	cl := NewRelayClient(ref)
 	resp, _, err := cl.do("GET", "/v1/box/"+enc(make([]byte, 16))+"/msgs", nil, nil)
 	if err != nil {
@@ -177,8 +167,6 @@ func cmdWhoami(s *State) error {
 		SafetyNumber(s.IK()), s.Relay.URL, FormatFingerprint(s.Relay.FP))
 	return nil
 }
-
-// ---------- invite / add ----------
 
 func cmdInvite(s *State, args []string) error {
 	fs := flag.NewFlagSet("invite", flag.ContinueOnError)
@@ -283,7 +271,6 @@ func cmdAdd(s *State, args []string) error {
 			return fmt.Errorf("cette identité est déjà enregistrée sous le nom %s", other)
 		}
 	}
-	// Ma boîte pour ce contact, puis le bloc d'appairage déposé dans la sienne.
 	readPub, readPriv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		return err
@@ -318,7 +305,6 @@ func cmdAdd(s *State, args []string) error {
 	return nil
 }
 
-// pairFrom traite un bloc reçu par l'invitant avant la fin de l'appairage.
 func pairFrom(s *State, name string, c *Contact, blob []byte) error {
 	if c.PairSecret == nil {
 		return ErrPair
@@ -337,12 +323,10 @@ func pairFrom(s *State, name string, c *Contact, blob []byte) error {
 	}
 	c.IK, c.XK = p.IK, p.XK
 	c.Their = &TheirBox{Relay: RelayRef{URL: p.URL, FP: p.FP}, WriteID: p.W}
-	c.PairSecret = nil // usage unique
+	c.PairSecret = nil
 	fmt.Printf("Appairage avec %s terminé. Empreinte de sécurité de %s : %s\n", name, name, SafetyNumber(c.IK))
 	return nil
 }
-
-// ---------- send / recv ----------
 
 func cmdSend(s *State, args []string) error {
 	if len(args) < 2 {
@@ -356,7 +340,6 @@ func cmdSend(s *State, args []string) error {
 	return nil
 }
 
-// sendMessage chiffre et dépose un message ; renvoie le numéro attribué par le relais.
 func sendMessage(s *State, name, msg string) (uint64, error) {
 	c := s.Contacts[name]
 	if c == nil || c.Their == nil || c.IK == nil {
@@ -385,8 +368,6 @@ func sendMessage(s *State, name, msg string) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	// La session est enregistrée avant le dépôt : une clé de message n'est jamais réutilisée,
-	// même si le dépôt échoue (le destinataire verra simplement un message manquant).
 	if err := s.Save(); err != nil {
 		return 0, err
 	}
@@ -456,7 +437,6 @@ func recvFrom(s *State, name string) (int, error) {
 		}
 		for _, r := range recs {
 			if c.IK == nil {
-				// Appairage pas encore terminé : seul un bloc d'appairage valide est accepté.
 				if err := pairFrom(s, name, c, r.Blob); err != nil {
 					fmt.Printf("[%s] bloc n° %d rejeté : %v\n", name, r.Seq, err)
 				} else {
@@ -503,7 +483,6 @@ func recvFrom(s *State, name string) (int, error) {
 			}
 			c.MyBox.LastSeq = r.Seq
 		}
-		// On enregistre avant d'acquitter : en cas d'échec de l'acquittement, rien n'est perdu.
 		if err := s.Save(); err != nil {
 			return shown, err
 		}
@@ -515,8 +494,6 @@ func recvFrom(s *State, name string) (int, error) {
 		}
 	}
 }
-
-// ---------- contacts / remove ----------
 
 func cmdContacts(s *State) error {
 	if len(s.Contacts) == 0 {

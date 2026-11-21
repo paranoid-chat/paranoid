@@ -7,19 +7,6 @@ import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
 
-/**
- * Coffre de la clé de données, ouvrable par deux codes :
- *  - le code de déverrouillage ;
- *  - le code de destruction, qui ouvre aussi la clé (il faut l'état pour envoyer les alertes)
- *    mais signale à l'appli qu'elle doit tout effacer.
- *
- * Chaque emplacement = Argon2id(code, sel) → AES-256-GCM(rôle ‖ clé de données). Le rôle est
- * chiffré et l'ordre des emplacements est aléatoire : rien ne distingue l'emplacement de
- * destruction de l'autre. Les deux dérivations sont toujours calculées, pour un temps constant.
- *
- * Sur Android, ce coffre est lui-même chiffré par une clé non exportable du Keystore : une copie
- * des fichiers ne suffit pas pour tenter les codes hors de l'appareil.
- */
 object LockBox {
     enum class Role { UNLOCK, DURESS }
 
@@ -31,7 +18,7 @@ object LockBox {
     class Params(val memoryKiB: Int = 65_536, val iterations: Int = 3, val parallelism: Int = 1)
 
     const val MIN_CODE_LENGTH = 6
-    private const val MAGIC = 0x504C434B // "PLCK"
+    private const val MAGIC = 0x504C434B
     private const val VERSION = 1
     private val AAD = "paranoid/lockbox/v1".toByteArray()
 
@@ -69,7 +56,6 @@ object LockBox {
                 slots.add(Triple(salt, nonce, ByteArray(n).also { i.readFully(it) }))
             }
         }
-        // Les deux emplacements sont toujours essayés : même durée quel que soit le code.
         var found: Result = Result.Wrong
         for ((salt, nonce, ct) in slots) {
             val key = derive(code, salt, params)
@@ -113,7 +99,6 @@ object LockBox {
     }
 }
 
-/** Temporisation des essais de code : rien jusqu'à 4 échecs, puis 30 s doublées à chaque échec (1 h max). */
 object LockThrottle {
     fun delaySeconds(failures: Int): Long = if (failures < 5) 0 else minOf(3600L, 30L shl minOf(failures - 5, 7))
 }

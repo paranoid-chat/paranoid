@@ -1,8 +1,5 @@
 package main
 
-// Diagnostic : état de la session et en-têtes des blocs rejetés. N'affiche aucun secret
-// (seulement les compteurs et le début des clés publiques).
-
 import (
 	"encoding/hex"
 	"errors"
@@ -19,7 +16,6 @@ func short(b []byte) string {
 	return hex.EncodeToString(b)
 }
 
-// blobInfo décrit l'en-tête en clair d'un bloc v2 (type de chaîne, clé DH, compteurs).
 func blobInfo(blob []byte) string {
 	if len(blob) != BlobSize || blob[0] != drVersion {
 		return ""

@@ -1,7 +1,6 @@
 [Unit]
 Description=Assistant de premier démarrage du relais Paranoid
 Documentation=https://getparanoid.fr
-# Seulement sur une image ISO ou Raspberry Pi fraîchement installée (fichier posé par l'image).
 ConditionPathExists=/etc/paranoid-relay/firstboot
 After=systemd-user-sessions.service network-online.target cloud-final.service plymouth-quit-wait.service
 Wants=network-online.target

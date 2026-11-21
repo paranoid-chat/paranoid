@@ -29,7 +29,6 @@ fun cat(vararg parts: ByteArray): ByteArray {
     return out
 }
 
-/** Comparaison non signée octet par octet, comme bytes.Compare en Go. */
 fun compareBytes(a: ByteArray, b: ByteArray): Int {
     for (i in 0 until minOf(a.size, b.size)) {
         val d = (a[i].toInt() and 0xff) - (b[i].toInt() and 0xff)
@@ -46,12 +45,10 @@ fun sha256(vararg parts: ByteArray): ByteArray {
 
 fun hmacSha256(key: ByteArray, data: ByteArray): ByteArray {
     val mac = Mac.getInstance("HmacSHA256")
-    // Une clé HMAC vide équivaut à une clé de zéros (RFC 2104) ; SecretKeySpec refuse les clés vides.
     mac.init(SecretKeySpec(if (key.isEmpty()) ByteArray(32) else key, "HmacSHA256"))
     return mac.doFinal(data)
 }
 
-/** HKDF-SHA256 (RFC 5869), identique à crypto/hkdf.Key de Go. */
 fun hkdf(ikm: ByteArray, salt: ByteArray?, info: String, length: Int): ByteArray =
     hkdf(ikm, salt, info.toByteArray(Charsets.UTF_8), length)
 
@@ -78,7 +75,6 @@ object X25519 {
 
     fun publicOf(priv: ByteArray): ByteArray = ByteArray(32).also { BcX25519.generatePublicKey(priv, 0, it, 0) }
 
-    /** Échange X25519. Lève une exception si le résultat est nul (point de petit ordre), comme Go. */
     fun agree(priv: ByteArray, pub: ByteArray): ByteArray {
         require(priv.size == 32 && pub.size == 32) { tr("clé X25519 invalide", "invalid X25519 key") }
         val out = ByteArray(32)
@@ -107,7 +103,6 @@ object Aead {
         return c.doFinal(plain)
     }
 
-    /** Renvoie null si l'authentification échoue. */
     fun open(key: ByteArray, nonce: ByteArray, sealed: ByteArray, aad: ByteArray): ByteArray? = try {
         val c = Cipher.getInstance("AES/GCM/NoPadding")
         c.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(128, nonce))
@@ -120,7 +115,6 @@ object Aead {
 
 open class CryptoException(msg: String) : Exception(msg)
 
-/** Empreinte de sécurité d'une identité, identique à celle du client Go. */
 fun safetyNumber(ik: ByteArray): String =
     hex(sha256(ik).copyOf(10)).uppercase().chunked(4).joinToString(" ")
 

@@ -215,29 +215,23 @@ func TestAuthentication(t *testing.T) {
 	b := e.newBox()
 	uri := "/v1/box/" + b64(b.id) + "/msgs?after=0"
 
-	// Mauvaise clé.
 	_, other, _ := ed25519.GenerateKey(rand.Reader)
 	wantCode(t, e.do(signedAt(other, "GET", uri, e.clock.Unix(), randBytes(16))), 401)
 
-	// Sans en-têtes.
 	wantCode(t, e.do(httptest.NewRequest("GET", uri, nil)), 401)
 
-	// Horodatage hors tolérance (passé et futur), puis dans la tolérance.
 	wantCode(t, e.do(signedAt(b.priv, "GET", uri, e.clock.Unix()-120, randBytes(16))), 401)
 	wantCode(t, e.do(signedAt(b.priv, "GET", uri, e.clock.Unix()+120, randBytes(16))), 401)
 	wantCode(t, e.do(signedAt(b.priv, "GET", uri, e.clock.Unix()-30, randBytes(16))), 200)
 
-	// Rejeu du même nonce.
 	nonce := randBytes(16)
 	wantCode(t, e.do(signedAt(b.priv, "GET", uri, e.clock.Unix(), nonce)), 200)
 	wantCode(t, e.do(signedAt(b.priv, "GET", uri, e.clock.Unix(), nonce)), 401)
 
-	// Requête modifiée après signature.
 	req := signedAt(b.priv, "GET", uri, e.clock.Unix(), randBytes(16))
 	req.URL.RawQuery = "after=1"
 	wantCode(t, e.do(req), 401)
 
-	// Une signature de lecture ne vaut pas pour une autre méthode.
 	req = signedAt(b.priv, "GET", "/v1/box/"+b64(b.id), e.clock.Unix(), randBytes(16))
 	req.Method = "DELETE"
 	wantCode(t, e.do(req), 401)
@@ -277,7 +271,6 @@ func TestPurge(t *testing.T) {
 	b := e.newBox()
 	wantCode(t, e.deposit(b.wid, blob(1)), 201)
 
-	// Après le TTL (7 jours) : le message disparaît, la boîte reste.
 	e.clock = e.clock.Add(8 * 24 * time.Hour)
 	if err := e.srv.Purge(); err != nil {
 		t.Fatal(err)
@@ -289,7 +282,6 @@ func TestPurge(t *testing.T) {
 	}
 	wantCode(t, e.deposit(b.wid, blob(2)), 201)
 
-	// Après 90 jours sans relève : la boîte disparaît.
 	e.clock = e.clock.Add(91 * 24 * time.Hour)
 	if err := e.srv.Purge(); err != nil {
 		t.Fatal(err)
@@ -303,7 +295,7 @@ func TestBoxExpiryResetByRead(t *testing.T) {
 	b := e.newBox()
 	for i := 0; i < 5; i++ {
 		e.clock = e.clock.Add(60 * 24 * time.Hour)
-		wantCode(t, e.fetch(b, ""), 200) // chaque relève repousse l'expiration
+		wantCode(t, e.fetch(b, ""), 200)
 		if err := e.srv.Purge(); err != nil {
 			t.Fatal(err)
 		}
@@ -316,7 +308,7 @@ func TestRelayFull(t *testing.T) {
 	used, free := int64(0), int64(10_000)
 	e.srv.cap.used = func() (int64, error) { return used, nil }
 	e.srv.cap.free = func() (int64, error) { return free, nil }
-	e.srv.cap.every = 0 // mesure à chaque requête
+	e.srv.cap.every = 0
 
 	writeID := e.newBox().wid
 	create := func() *httptest.ResponseRecorder {
@@ -325,7 +317,6 @@ func TestRelayFull(t *testing.T) {
 	if code := e.deposit(writeID, blob(1)).Code; code != http.StatusCreated {
 		t.Fatalf("dépôt sous le plafond : %d", code)
 	}
-	// 90 % : plus de nouvelles boîtes, mais les dépôts passent encore.
 	used = 900
 	if rec := create(); rec.Code != http.StatusInsufficientStorage || rec.Header().Get("X-Relay-Full") != "1" {
 		t.Fatalf("création à 90 %% : %d", rec.Code)
@@ -333,12 +324,10 @@ func TestRelayFull(t *testing.T) {
 	if code := e.deposit(writeID, blob(1)).Code; code != http.StatusCreated {
 		t.Fatalf("dépôt à 90 %% : %d", code)
 	}
-	// 100 % : plus aucun dépôt.
 	used = 1000
 	if rec := e.deposit(writeID, blob(1)); rec.Code != http.StatusInsufficientStorage || rec.Header().Get("X-Relay-Full") != "1" {
 		t.Fatalf("dépôt à 100 %% : %d", rec.Code)
 	}
-	// Disque presque plein, base sous le plafond : refus aussi.
 	used, free = 0, 100
 	if code := e.deposit(writeID, blob(1)).Code; code != http.StatusInsufficientStorage {
 		t.Fatalf("dépôt disque plein : %d", code)

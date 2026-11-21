@@ -1,31 +1,12 @@
 package app.paranoid.core
 
-/*
- * Appairage en un seul scan (MESSAGES.md, « Appairage »). Même format que relaycli (pair.go).
- *
- * L'invitant montre un QR avec ses clés publiques, la boîte qu'il réserve au contact et un secret
- * aléatoire à usage unique. Celui qui scanne crée sa boîte pour l'invitant, puis dépose dans la
- * boîte de l'invitant un bloc d'appairage de 2048 octets :
- *
- *   version = 3 (1) | X25519 éphémère (32) | AES-256-GCM(contenu 1999 o) + tag (16)
- *
- * Contenu : ik (32) | xk (32) | write_id (16) | empreinte du relais (32) | longueur de l'URL (2) |
- *           URL | signature Ed25519 (64) | zéros
- *
- * Clé + nonce = HKDF-SHA256(X25519(éphémère, xk invitant) ‖ secret, sel = ik invitant ‖ éphémère,
- * info = "relay-pair-v1"). Données associées = "relay-pair-v1" ‖ ik invitant ‖ éphémère.
- * Signature (clé d'identité de celui qui scanne) sur "relay-pair-v1/sig" ‖ ik invitant ‖
- * SHA-256(secret) ‖ contenu avant la signature : elle lie xk à ik, que couvre l'empreinte.
- */
-
 const val PAIR_SECRET_LEN = 32
 const val PAIR_VERSION: Byte = 3
-private const val PAIR_PLAIN_LEN = BLOB_SIZE - 1 - 32 - 16 // 1999
+private const val PAIR_PLAIN_LEN = BLOB_SIZE - 1 - 32 - 16
 private const val MAX_URL = 255
 private val PAIR_INFO = "relay-pair-v1".toByteArray()
 private val PAIR_SIG = "relay-pair-v1/sig".toByteArray()
 
-/** Ce que celui qui scanne transmet à l'invitant : ses clés et la boîte qu'il lui a créée. */
 class PairPayload(val ik: ByteArray, val xk: ByteArray, val writeId: ByteArray, val relay: RelayRef) {
     internal fun body(): ByteArray {
         val url = relay.url.toByteArray(Charsets.UTF_8)
@@ -45,7 +26,6 @@ object Pairing {
         return okm.copyOfRange(0, 32) to okm.copyOfRange(32, 44)
     }
 
-    /** Bloc déposé par celui qui scanne ([mySeed] = sa graine d'identité) dans la boîte de l'invitant. */
     fun seal(mySeed: ByteArray, inviterIk: ByteArray, inviterXk: ByteArray, secret: ByteArray, p: PairPayload): ByteArray {
         require(secret.size == PAIR_SECRET_LEN && inviterIk.size == 32)
         val body = p.body()
@@ -62,7 +42,6 @@ object Pairing {
         return blob
     }
 
-    /** Ouvre et vérifie un bloc d'appairage reçu par l'invitant ; null s'il est invalide. */
     fun open(myX: ByteArray, myIk: ByteArray, secret: ByteArray, blob: ByteArray): PairPayload? {
         if (blob.size != BLOB_SIZE || blob[0] != PAIR_VERSION || secret.size != PAIR_SECRET_LEN) return null
         val ePub = blob.copyOfRange(1, 33)

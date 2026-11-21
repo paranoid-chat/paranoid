@@ -15,7 +15,6 @@ import (
 	"time"
 )
 
-// Config regroupe les paramètres du protocole (voir PROTOCOL.md §1 et §5).
 type Config struct {
 	BlobSize          int
 	Quota             int
@@ -25,8 +24,8 @@ type Config struct {
 	CreatesPerHour    int
 	DepositsPerMinute int
 	MaxPage           int
-	MaxDB             int64 // octets occupés dans la base au maximum (0 = sans limite)
-	MinFree           int64 // octets à laisser libres sur le disque (0 = sans limite)
+	MaxDB             int64
+	MinFree           int64
 }
 
 func DefaultConfig() Config {
@@ -39,8 +38,8 @@ func DefaultConfig() Config {
 		CreatesPerHour:    10,
 		DepositsPerMinute: 60,
 		MaxPage:           50,
-		MaxDB:             1 << 30, // 1 Gio
-		MinFree:           2 << 30, // 2 Gio
+		MaxDB:             1 << 30,
+		MinFree:           2 << 30,
 	}
 }
 
@@ -79,7 +78,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mux.ServeHTTP(w, r)
 }
 
-// Purge applique le TTL, l'expiration des boîtes et le nettoyage des caches mémoire.
 func (s *Server) Purge() error {
 	now := s.now()
 	s.nonces.gc(now)
@@ -87,8 +85,6 @@ func (s *Server) Purge() error {
 	s.depositLim.gc(now)
 	return s.store.Purge(now.Unix(), int64(s.cfg.TTL.Seconds()), int64(s.cfg.BoxExpiry.Seconds()))
 }
-
-// ---------- utilitaires ----------
 
 func b64(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }
 
@@ -128,15 +124,11 @@ func tooMany(w http.ResponseWriter, retry time.Duration) {
 	http.Error(w, "trop de requêtes", http.StatusTooManyRequests)
 }
 
-// ---------- authentification (PROTOCOL.md §4) ----------
-
-// authenticate vérifie la signature d'une requête de lecture. En cas d'échec, la réponse est déjà écrite.
 func (s *Server) authenticate(w http.ResponseWriter, r *http.Request, boxID []byte) bool {
 	_, ok := s.authBody(w, r, boxID)
 	return ok
 }
 
-// authBody vérifie la signature et renvoie le corps de la requête (couvert par la signature).
 func (s *Server) authBody(w http.ResponseWriter, r *http.Request, boxID []byte) ([]byte, bool) {
 	pub, err := s.store.PubKey(boxID)
 	if errors.Is(err, ErrNotFound) {
@@ -186,15 +178,12 @@ func (s *Server) authBody(w http.ResponseWriter, r *http.Request, boxID []byte) 
 		return fail()
 	}
 
-	// Le nonce n'est mémorisé qu'après une signature valide : un tiers ne peut pas remplir le cache.
 	if !s.nonces.add(hex.EncodeToString(boxID)+":"+nonceStr, now, 2*s.cfg.Tolerance+time.Second) {
 		return fail()
 	}
 	_ = s.store.Touch(boxID, now.Unix())
 	return body, true
 }
-
-// ---------- handlers ----------
 
 func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 	if !s.cap.canCreate(s.now()) {
@@ -349,8 +338,6 @@ func (s *Server) handleDeleteBox(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// ---------- anti-rejeu et limitation de débit (en mémoire uniquement) ----------
-
 type nonceCache struct {
 	mu sync.Mutex
 	m  map[string]time.Time
@@ -358,7 +345,6 @@ type nonceCache struct {
 
 func newNonceCache() *nonceCache { return &nonceCache{m: make(map[string]time.Time)} }
 
-// add renvoie false si le nonce est déjà présent et non expiré.
 func (c *nonceCache) add(key string, now time.Time, ttl time.Duration) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -384,7 +370,6 @@ type bucket struct {
 	last   time.Time
 }
 
-// limiter est un seau à jetons par clé : capacité = events, recharge = events par période.
 type limiter struct {
 	mu     sync.Mutex
 	cap    float64

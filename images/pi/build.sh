@@ -1,7 +1,4 @@
 #!/bin/bash
-# images/pi/build.sh VERSION DEB_ARM64 SORTIE  (root, sur une machine x86 avec qemu-user-static)
-# Construit paranoid-relay-VERSION-raspberrypi-arm64.img.xz : Raspberry Pi OS Lite 64 bits
-# + paquet paranoid-relay, aucun compte, SSH coupé, assistant au premier démarrage sur l'écran.
 set -euo pipefail
 version=$1 deb=$2 out=$3
 latest=https://downloads.raspberrypi.com/raspios_lite_arm64_latest
@@ -45,7 +42,6 @@ done
 chroot "$mnt" systemctl list-unit-files --no-pager | grep -iE 'userconf|cloud|firstboot|resize|ssh|getty@' || true
 echo "-------------------------------------------"
 
-# Résolution DNS dans le chroot le temps de l'installation.
 resolv_bak=""
 if [ -e "$mnt/etc/resolv.conf" ] || [ -L "$mnt/etc/resolv.conf" ]; then
 	resolv_bak=$work/resolv.conf
@@ -61,7 +57,6 @@ apt-get install -y -q /tmp/paranoid-relay.deb unattended-upgrades sudo console-s
 rm -f /tmp/paranoid-relay.deb
 apt-get clean
 
-# Certificat propre à chaque relais : généré au premier démarrage, jamais dans l'image.
 rm -f /etc/paranoid-relay/relay.crt /etc/paranoid-relay/relay.key
 
 cat >/etc/apt/apt.conf.d/20auto-upgrades <<'APT'
@@ -70,12 +65,9 @@ APT::Periodic::Unattended-Upgrade "1";
 APT
 printf 'net.ipv6.conf.all.disable_ipv6 = 1\nnet.ipv6.conf.default.disable_ipv6 = 1\n' >/etc/sysctl.d/90-paranoid-relay.conf
 
-# Pas d'assistant de création de compte de Raspberry Pi OS : celui du relais crée le compte admin.
 systemctl mask userconfig.service >/dev/null 2>&1 || true
-# cloud-init garde l'agrandissement de la partition, mais ne gère ni le réseau, ni le nom, ni les comptes.
 mkdir -p /etc/cloud/cloud.cfg.d
 cat >/etc/cloud/cloud.cfg.d/99-paranoid-relay.cfg <<'CLOUD'
-# Relais Paranoid : réseau, nom de machine et compte réglés par « paranoid-relay firstboot ».
 network: {config: disabled}
 preserve_hostname: true
 users: []
@@ -88,10 +80,8 @@ touch /etc/paranoid-relay/firstboot
 systemctl enable paranoid-relay-firstboot.service
 EOF
 
-# Données cloud-init de la partition de démarrage : aucun compte, nom conservé.
 cat >"$mnt/boot/firmware/user-data" <<'EOF'
 #cloud-config
-# Relais Paranoid : le compte d'administration est créé par l'assistant du premier démarrage.
 users: []
 preserve_hostname: true
 ssh_pwauth: false

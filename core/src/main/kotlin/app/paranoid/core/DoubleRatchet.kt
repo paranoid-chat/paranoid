@@ -1,23 +1,18 @@
 package app.paranoid.core
 
-// Double Ratchet, format de message v2. Port exact de relay/cmd/relaycli/dr.go : les deux
-// implémentations doivent produire et accepter les mêmes blocs (voir MESSAGES.md).
-
 const val BLOB_SIZE = 2048
 private const val DR_VERSION: Byte = 2
 const val DR_TYPE_RATCHET: Byte = 0
 const val DR_TYPE_BOOT: Byte = 1
 const val DR_HEADER_LEN = 1 + 1 + 32 + 4 + 4
 private const val TAG_LEN = 16
-const val DR_INNER_LEN = BLOB_SIZE - DR_HEADER_LEN - TAG_LEN // 1990
+const val DR_INNER_LEN = BLOB_SIZE - DR_HEADER_LEN - TAG_LEN
 private const val INNER_HEAD = 1 + 16 + 8 + 2
-const val MAX_TEXT = DR_INNER_LEN - INNER_HEAD // 1963 octets
+const val MAX_TEXT = DR_INNER_LEN - INNER_HEAD
 const val TYPE_TEXT: Byte = 1
 
-/** Alerte « bouton rouge » : l'expéditeur a détruit sa clé privée. Corps vide. */
 const val TYPE_ALERT: Byte = 2
 
-/** L'expéditeur a changé de relais : son ancienne identité est effacée. Corps vide. */
 const val TYPE_RELAY_CHANGE: Byte = 3
 
 private const val MAX_SKIP = 1000L
@@ -39,7 +34,6 @@ class ChainState(var dh: ByteArray, var ck: ByteArray, var n: Long) {
 
 class SkippedKey(val dh: ByteArray, val n: Long, val mk: ByteArray)
 
-/** État du ratchet pour un contact. */
 class Session(
     val initiator: Boolean,
     var rk: ByteArray,
@@ -65,10 +59,6 @@ class Session(
         skipped.clear(); skipped.addAll(o.skipped)
     }
 
-    /**
-     * Chiffre [inner] ([DR_INNER_LEN] octets) et fait avancer la chaîne d'envoi.
-     * L'appelant doit enregistrer la session AVANT de déposer le bloc.
-     */
     fun encrypt(env: DrEnv, inner: ByteArray): ByteArray {
         require(inner.size == DR_INNER_LEN) { "taille de contenu incorrecte" }
         val header: DrHeader
@@ -85,7 +75,7 @@ class Session(
                 val boot = bootSend ?: run {
                     val eph = X25519.generatePrivate()
                     val ck = bootCK(env.sk, X25519.agree(eph, env.theirXK))
-                    ChainState(X25519.publicOf(eph), ck, 0) // la clé privée éphémère n'est pas conservée
+                    ChainState(X25519.publicOf(eph), ck, 0)
                 }.also { bootSend = it }
                 val (next, key) = kdfCK(boot.ck)
                 boot.ck = next; mk = key
@@ -101,7 +91,6 @@ class Session(
         return blob
     }
 
-    /** Déchiffre un bloc v2. La session n'est modifiée que si le déchiffrement réussit. */
     fun decrypt(env: DrEnv, blob: ByteArray): ByteArray {
         val h = DrHeader.parse(blob)
         val c = copy()
@@ -119,7 +108,6 @@ class Session(
         return if (i < 0) null else skipped.removeAt(i).mk
     }
 
-    /** Dérive et met de côté les clés des messages [from, until) ; renvoie la nouvelle clé de chaîne. */
     private fun skipTo(dh: ByteArray, ck: ByteArray, from: Long, until: Long): ByteArray {
         if (until < from) throw ReplayException()
         if (until - from > MAX_SKIP) throw SkipException()
@@ -138,8 +126,6 @@ class Session(
 
         if (h.type == DR_TYPE_BOOT) {
             if (!initiator) throw DecryptException()
-            // Après la bascule du répondeur sur le ratchet, la chaîne de démarrage (recalculable
-            // depuis les clés statiques) n'est plus acceptée : sinon on pourrait rejouer d'anciens messages.
             if (ckr != null) throw ReplayException()
             var boot = bootRecv
             if (boot == null || !boot.dh.contentEquals(h.dh)) {
@@ -187,7 +173,6 @@ class Session(
     }
 
     companion object {
-        /** État initial à partir des clés statiques (résultat du double scan). */
         fun create(env: DrEnv): Session {
             if (!env.initiator) return Session(initiator = false, rk = env.sk.copyOf(), dhsPriv = env.myX.copyOf())
             val priv = X25519.generatePrivate()
@@ -197,7 +182,6 @@ class Session(
     }
 }
 
-/** Éléments dérivés des clés statiques, recalculés à chaque usage. */
 class DrEnv(val sk: ByteArray, val ad: ByteArray, val myX: ByteArray, val theirXK: ByteArray, val initiator: Boolean) {
     companion object {
         fun create(myIK: ByteArray, myX: ByteArray, theirIK: ByteArray, theirXK: ByteArray): DrEnv {
@@ -251,7 +235,6 @@ private fun kdfRK(rk: ByteArray, dhOut: ByteArray): Pair<ByteArray, ByteArray> {
     return out.copyOfRange(0, 32) to out.copyOfRange(32, 64)
 }
 
-/** Renvoie (nouvelle clé de chaîne, clé de message). */
 private fun kdfCK(ck: ByteArray): Pair<ByteArray, ByteArray> =
     hmacSha256(ck, byteArrayOf(0x02)) to hmacSha256(ck, byteArrayOf(0x01))
 
@@ -261,8 +244,6 @@ private fun msgKeys(mk: ByteArray): Pair<ByteArray, ByteArray> {
     val out = hkdf(mk, null, INFO_MSG, 44)
     return out.copyOfRange(0, 32) to out.copyOfRange(32, 44)
 }
-
-// ---------- contenu clair ----------
 
 class Plain(val type: Byte, val id: ByteArray, val ts: Long, val body: ByteArray)
 

@@ -1,13 +1,4 @@
 #!/bin/bash
-# paranoid-relay : administration du relais Paranoid.
-#   config   assistant de configuration (whiptail)
-#   info     URL et empreinte à donner aux utilisateurs
-#   status   état du service, du pare-feu, de la base
-#   apply    régénère le pare-feu et redémarre le relais d'après relay.conf
-#   import   reprend le certificat, la clé et la base d'un relais existant
-#   newcert  génère un nouveau certificat (tous les utilisateurs devront changer l'empreinte)
-#   announce signal signé vers l'annuaire public getparanoid.fr (timer horaire si ANNOUNCE=yes)
-#   firstboot assistant complet des images ISO et Raspberry Pi (langue, machine, réseau, admin, relais)
 set -eu
 umask 077
 
@@ -26,7 +17,6 @@ FWSVC=paranoid-relay-firewall
 ANNSVC=paranoid-relay-announce
 ANNOUNCE_URL=https://getparanoid.fr/api/relay-announce.php
 MYIP_URL="https://getparanoid.fr/relais.php?format=myip"
-# Présent seulement sur une image fraîchement installée : lance l'assistant au démarrage.
 FIRSTBOOT_FLAG=$ETC/firstboot
 ISSUE=/etc/issue.d/paranoid-relay.issue
 FIRSTBOOT=0
@@ -34,11 +24,9 @@ TITLE="Paranoid relay"
 
 LANG_UI=fr
 load() {
-	# shellcheck source=/dev/null
 	[ -r "$CONF" ] && . "$CONF"
 	: "${LANG_UI:=fr}" "${PORT:=8443}" "${MAX_DB:=1G}" "${MIN_FREE:=2G}"
 	: "${FIREWALL:=ratelimit}" "${SSH_MODE:=keep}" "${PUBLIC_HOST:=}" "${PUBLIC_PORT:=}" "${SSH_USER:=}"
-	# Absent d'un relay.conf d'avant l'annuaire : pas de publication sans passer par l'assistant.
 	: "${ANNOUNCE:=no}" "${RELAY_NAME:=}"
 }
 load
@@ -47,14 +35,11 @@ t() { if [ "${LANG_UI:-fr}" = en ]; then printf '%s' "$2"; else printf '%s' "$1"
 die() { echo "paranoid-relay: $*" >&2; exit 1; }
 need_root() { [ "$(id -u)" = 0 ] || die "$(t 'à lancer en root (su - ou sudo)' 'must be run as root (su - or sudo)')"; }
 
-# ---------- configuration ----------
-
 ensure_conf() {
 	[ -f "$CONF" ] && return
 	install -o root -g paranoid-relay -m 0640 "$DEFAULT" "$CONF"
 }
 
-# set_conf CLÉ VALEUR : remplace la ligne CLÉ=… (les valeurs sont validées avant).
 set_conf() {
 	local tmp
 	tmp=$(mktemp "$ETC/.relay.conf.XXXXXX")
@@ -89,8 +74,6 @@ ssh_port() {
 	echo "${p:-22}"
 }
 
-# ---------- certificat ----------
-
 gen_cert() {
 	local k c
 	k=$(mktemp "$ETC/.key.XXXXXX")
@@ -103,8 +86,6 @@ gen_cert() {
 	mv "$k" "$KEY"
 	mv "$c" "$CRT"
 }
-
-# ---------- pare-feu ----------
 
 gen_firewall() {
 	local out=$1 p=$PORT sp="" full=0
@@ -166,8 +147,6 @@ apply_firewall() {
 	systemctl enable "$FWSVC" >/dev/null 2>&1
 	systemctl restart "$FWSVC"
 }
-
-# ---------- SSH ----------
 
 gen_sshd() {
 	echo "# Géré par paranoid-relay (SSH_MODE=$SSH_MODE) : ne pas modifier à la main."
@@ -247,9 +226,6 @@ add_key() {
 	chmod 0600 "$h/.ssh/authorized_keys"
 }
 
-# ---------- annuaire ----------
-
-# announce [remove] : envoie un signal signé par la clé TLS du relais.
 announce() {
 	local action=${1:-up} url=${PARANOID_ANNOUNCE_URL:-$ANNOUNCE_URL} proto=(--proto "=https") ver ts
 	case $action in up | remove) ;; *) die "usage : paranoid-relay announce [remove]" ;; esac
@@ -267,8 +243,6 @@ announce() {
 		--data-urlencode "ts=$ts" --data-urlencode "cert@$CRT" --data-urlencode "sig=$sig" "$url"
 }
 
-# apply_announce [wait] : timer selon ANNOUNCE ; avec wait, premier signal envoyé
-# tout de suite par le service lui-même (même bac à sable que le timer) et résultat affiché.
 apply_announce() {
 	if [ "$ANNOUNCE" = yes ] && [ -f "$DONE" ]; then
 		systemctl enable --now "$ANNSVC.timer" >/dev/null 2>&1
@@ -287,8 +261,6 @@ apply_announce() {
 	fi
 }
 
-# ---------- services ----------
-
 restart_relay() {
 	systemctl enable "$SVC" >/dev/null 2>&1
 	systemctl restart "$SVC"
@@ -297,16 +269,12 @@ restart_relay() {
 		die "$(t "le relais ne démarre pas : journalctl -u $SVC -n 20" "the relay does not start: journalctl -u $SVC -n 20")"
 }
 
-# ---------- adresse publique, écran de connexion ----------
-
-# IP publique vue par getparanoid.fr (même service que l'annuaire), sinon IP locale.
 public_ip() {
 	local ip
 	ip=$(curl -s --max-time 8 --proto "=https" "$MYIP_URL" 2>/dev/null) || ip=""
 	if [[ $ip =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then echo "$ip"; else local_ip; fi
 }
 
-# URL et empreinte affichées au-dessus de l'invite de connexion de la console.
 write_issue() {
 	[ -d /etc/issue.d ] || return 0
 	{
@@ -317,8 +285,6 @@ write_issue() {
 	} >"$ISSUE"
 	chmod 0644 "$ISSUE"
 }
-
-# ---------- assistant ----------
 
 W() {
 	whiptail --title "$TITLE" --ok-button OK --cancel-button "$(t Annuler Cancel)" \
@@ -331,7 +297,7 @@ abort() {
 }
 ask() { W --inputbox "$1" 14 76 "$2"; }
 
-ask_valid() { # ask_valid FONCTION_DE_VALIDATION TEXTE DÉFAUT
+ask_valid() {
 	local v
 	while :; do
 		v=$(ask "$2" "$3") || return 1
@@ -369,7 +335,6 @@ wizard() {
 		full "$(t "Tout bloquer sauf le relais et SSH" "Block everything except the relay and SSH")" \
 		off "$(t "Aucune règle" "No rules")") || abort
 
-	# Premier démarrage (images) : seul compte root, donc SSH désactivé ou par clé pour root.
 	local sshm=(keep "$(t "Ne pas modifier la configuration SSH" "Leave the SSH configuration as is")"
 		key "$(t "Clé uniquement, root interdit, 3 essais" "Key only, no root, 3 attempts")"
 		password "$(t "Mot de passe fort, root interdit, 3 essais" "Strong password, no root, 3 attempts")"
@@ -408,7 +373,6 @@ wizard() {
 		done
 	fi
 
-	# Premier démarrage : le mot de passe fort du compte admin vient d'être choisi.
 	if [ "$SSH_MODE" = password ] && [ "$FIRSTBOOT" = 0 ]; then
 		if passwd -S "$SSH_USER" 2>/dev/null | awk '{ exit !($2 == "P") }' &&
 			! W --yesno "$(t "Définir maintenant un nouveau mot de passe fort pour $SSH_USER ?" "Set a new strong password for $SSH_USER now?")" 8 70; then
@@ -453,7 +417,6 @@ $(t "Appliquer cette configuration ?" "Apply this configuration?")"
 	W --yesno "$v" 16 76 || abort
 	clear
 
-	# Sauvegarde pour un retour arrière si la connexion SSH est perdue.
 	local fw_prev="" sshd_prev=""
 	[ -f "$FW" ] && { fw_prev=$(mktemp); cp -p "$FW" "$fw_prev"; }
 	[ -f "$SSHD" ] && { sshd_prev=$(mktemp); cp -p "$SSHD" "$sshd_prev"; }
@@ -511,14 +474,11 @@ $(t "Appliquer cette configuration ?" "Apply this configuration?")"
 	info
 }
 
-# ---------- premier démarrage (images ISO et Raspberry Pi) ----------
-
 valid_hostname() { [[ $1 =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]]; }
 valid_cidr() { [[ $1 =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}/[0-9]{1,2}$ ]]; }
 valid_ip4() { [[ $1 =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; }
 valid_ip4s() { [[ $1 =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}( [0-9]{1,3}(\.[0-9]{1,3}){3})*$ ]]; }
 
-# Interface Ethernet : celle de la route par défaut, sinon la première qui n'est ni lo ni sans fil.
 net_iface() {
 	local i
 	i=$(ip -o -4 route show default 2>/dev/null | awk '{ print $5; exit }')
@@ -544,7 +504,6 @@ set_keyboard() {
 }
 
 set_hostname() {
-	# Sans hostnamectl : pas de D-Bus sur l'ISO minimale.
 	echo "$1" >/etc/hostname
 	hostname "$1"
 	if grep -q '^127\.0\.1\.1' /etc/hosts; then
@@ -554,7 +513,6 @@ set_hostname() {
 	fi
 }
 
-# set_network IFACE ADRESSE/PRÉFIXE PASSERELLE "DNS1 DNS2" (IP fixe)
 set_network() {
 	local ifc=$1 addr=$2 gw=$3 dns=$4
 	if command -v nmcli >/dev/null 2>&1 && systemctl is-active --quiet NetworkManager; then
@@ -584,7 +542,6 @@ set_network() {
 	fi
 }
 
-# masque 255.255.255.0 ou 24 → 24
 mask_prefix() {
 	local m=$1 n=0 o end=0
 	if [[ $m =~ ^[0-9]{1,2}$ ]]; then
@@ -620,7 +577,6 @@ firstboot_steps() {
 	set_network "$ifc" "$ip/$(mask_prefix "$mask")" "$gw" "$dns"
 	sleep 3
 
-	# Image Raspberry Pi : root n'a pas encore de mot de passe (l'ISO l'a demandé à l'installation).
 	if ! passwd -S root 2>/dev/null | awk '{ exit !($2 == "P") }'; then
 		while :; do
 			pass=$(W --passwordbox "$(t 'Mot de passe du superutilisateur "root" :' 'Password of the superuser "root":')" 8 70) || return 1
@@ -646,10 +602,8 @@ firstboot() {
 	FIRSTBOOT=1
 	ensure_conf
 	load
-	# Image Raspberry Pi : le certificat n'est jamais dans l'image, il est créé sur la machine.
 	[ -f "$CRT" ] && [ -f "$KEY" ] || gen_cert
 	local v fixed=""
-	# ISO : langue choisie au menu de démarrage (écrite dans le fichier firstboot par l'installeur).
 	fixed=$(sed -n 's/^LANG_UI=\(fr\|en\)$/\1/p' "$FIRSTBOOT_FLAG" 2>/dev/null) || true
 	while :; do
 		clear
@@ -662,7 +616,6 @@ firstboot() {
 		set_conf LANG_UI "$LANG_UI"
 		set_keyboard
 		firstboot_steps || continue
-		# Le reste de l'assistant (relais, pare-feu, SSH, annuaire) ; Annuler le recommence.
 		( wizard ) && break
 		sleep 2
 	done
@@ -681,8 +634,6 @@ Fingerprint: $(fingerprint)
 Check that your router has port ${PUBLIC_PORT:-$PORT} open (to $(local_ip):$PORT).")" 14 78 || true
 	clear
 }
-
-# ---------- sous-commandes ----------
 
 info() {
 	need_root
@@ -720,7 +671,7 @@ apply() {
 	return 0
 }
 
-in_use() { # un processus a-t-il ce fichier ouvert ?
+in_use() {
 	local f
 	f=$(readlink -f "$1")
 	[ -n "$(find /proc/[0-9]*/fd -lname "$f" 2>/dev/null | head -1)" ]

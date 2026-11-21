@@ -44,7 +44,6 @@ import androidx.compose.ui.unit.dp
 
 private const val DAY = 86_400L
 
-/** Crans du curseur, du plus permissif au plus strict. 0 = pour toujours. */
 private val HISTORY_SECONDS = listOf(0L, 365 * DAY, 180 * DAY, 90 * DAY, 30 * DAY, 7 * DAY, 3 * DAY, DAY)
 
 private fun historyLabel(i: Int): String = when (i) {
@@ -60,10 +59,6 @@ private fun historyLabel(i: Int): String = when (i) {
 
 private fun stepOf(seconds: Long): Int = HISTORY_SECONDS.indexOf(seconds).coerceAtLeast(0)
 
-/**
- * Langue de l'appli, par le réglage Android par appli (Android 13+) : l'activité est recréée dans
- * la nouvelle langue, et le choix apparaît aussi dans Paramètres Android → Applis → Paranoid → Langue.
- */
 fun setAppLanguage(ctx: Context, english: Boolean) {
     ctx.getSystemService(LocaleManager::class.java).applicationLocales = LocaleList.forLanguageTags(if (english) "en" else "fr")
 }
@@ -85,7 +80,7 @@ private fun LanguageChoice(label: String, english: Boolean) {
 fun SettingsScreen(ui: Ui, vm: MainViewModel) {
     var pos by remember { mutableFloatStateOf(stepOf(ui.historySeconds).toFloat()) }
     LaunchedEffect(ui.historySeconds) { pos = stepOf(ui.historySeconds).toFloat() }
-    var confirm by remember { mutableStateOf<Pair<Int, Int>?>(null) } // (cran, messages à effacer)
+    var confirm by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     val index = pos.toInt()
 
     Scaffold(

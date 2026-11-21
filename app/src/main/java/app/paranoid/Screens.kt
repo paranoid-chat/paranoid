@@ -91,8 +91,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-// ---------- éléments communs ----------
-
 @Composable
 internal fun Messages(ui: Ui, vm: MainViewModel) {
     ui.error?.let {
@@ -132,8 +130,6 @@ private fun qrBitmap(text: String, size: Int = 720): ImageBitmap {
     return Bitmap.createBitmap(px, m.width, m.height, Bitmap.Config.ARGB_8888).asImageBitmap()
 }
 
-/** Copie marquée « sensible » : Android masque l'aperçu du presse-papiers. */
-/** Menu de partage Android : pour transmettre l'invitation à un PC sans caméra. */
 private fun shareInvite(ctx: Context, invite: String) {
     val send = Intent(Intent.ACTION_SEND).apply {
         type = "text/plain"
@@ -144,8 +140,6 @@ private fun shareInvite(ctx: Context, invite: String) {
 
 private val timeFmt = SimpleDateFormat("dd/MM HH:mm", Locale.FRANCE)
 private fun fmt(ts: Long) = if (ts == 0L) "" else timeFmt.format(Date(ts * 1000))
-
-// ---------- écrans ----------
 
 @Composable
 fun LoadingScreen() {
@@ -295,7 +289,6 @@ fun AddContactScreen(ui: Ui, vm: MainViewModel) {
         ) {
             val invite = ui.add.invite
             if (ui.noRelay) {
-                // Identité sans relais : impossible de créer une boîte ni de répondre à un QR.
                 Text(tr("Aucun relais n'est sélectionné. Choisir d'abord un relais pour pouvoir ajouter des contacts.",
                     "No relay is selected. Choose a relay first to be able to add contacts."))
                 Button(onClick = { vm.goChangeRelay() }, modifier = Modifier.fillMaxWidth()) { Text(tr("Changer de relais", "Change relay")) }
@@ -487,15 +480,11 @@ private fun Bubble(m: MessageRow, name: String) {
     }
 }
 
-
-// ---------- codes et verrouillage ----------
-
 @Composable
 private fun CodeField(value: String, onChange: (String) -> Unit, label: String, onDone: (() -> Unit)? = null) {
     OutlinedTextField(
         value, onChange, label = { Text(label) }, singleLine = true,
         visualTransformation = PasswordVisualTransformation(),
-        // Type « mot de passe » : le clavier n'apprend pas et ne suggère rien.
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
         keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { onDone?.invoke() }),
         modifier = Modifier.fillMaxWidth(),
@@ -555,7 +544,6 @@ fun LockScreen(ui: Ui, vm: MainViewModel) {
     }
     Messages(ui, vm)
 }
-
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -640,7 +628,6 @@ fun ChangeRelayScreen(ui: Ui, vm: MainViewModel) {
             RelayChooser(ui, vm, choice, currentUrl = ui.relayUrl, currentFp = ui.relayFp)
             HorizontalDivider()
 
-            // ---------- validation ----------
             Text(
                 when {
                     choice.public && choice.pick != null -> choice.pick!!.let { tr("Nouveau relais : ${it.name} (${it.url})", "New relay: ${it.name} (${it.url})") }
@@ -664,9 +651,7 @@ fun ChangeRelayScreen(ui: Ui, vm: MainViewModel) {
     Messages(ui, vm)
 }
 
-/** Choix d'un relais : un relais de l'annuaire public, ou un relais privé (adresse + empreinte facultative). */
 class RelayChoice {
-    /** true : relais de l'annuaire public ; false : relais privé saisi à la main. */
     var public by mutableStateOf(true)
     var pick by mutableStateOf<RelayRow?>(null)
     var url by mutableStateOf("")
@@ -675,15 +660,9 @@ class RelayChoice {
     val targetFp get() = if (public) pick?.fp ?: "" else fp
 }
 
-/**
- * Choix du relais, partagé par la création d'identité et « Changer de relais » : un menu déroulant
- * « Relais publics » / « Relais privé », puis seulement la partie choisie.
- */
 @Composable
 fun RelayChooser(ui: Ui, vm: MainViewModel, c: RelayChoice, currentUrl: String? = null, currentFp: String? = null) {
-    // Liste de l'annuaire chargée d'office quand « Relais publics » est affiché.
     LaunchedEffect(c.public) { if (c.public && ui.directory == null) vm.loadDirectory() }
-    // Empreinte lue sur le relais privé : reportée dans le champ si l'adresse n'a pas changé entre-temps.
     LaunchedEffect(ui.probedFp, ui.probedUrl) {
         if (ui.probedFp != null && ui.probedUrl == c.url.trim().trimEnd('/')) c.fp = ui.probedFp
     }

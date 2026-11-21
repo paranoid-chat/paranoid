@@ -1,8 +1,5 @@
 package main
 
-// Fonctions pratiques pour utiliser relaycli comme « appli PC » face au téléphone :
-// QR dans le terminal ou en PNG, invitation lue sur l'entrée standard, discussion en direct.
-
 import (
 	"bufio"
 	"errors"
@@ -16,9 +13,6 @@ import (
 	qrcode "github.com/skip2/go-qrcode"
 )
 
-// terminalQR dessine le QR avec des demi-blocs. go-qrcode dessine les modules sombres avec la
-// couleur de fond du terminal : c'est le bon sens sur un terminal sombre (Windows Terminal,
-// PowerShell). Sur un terminal clair, il faut inverser.
 func terminalQR(text string, darkTerminal bool) (string, error) {
 	q, err := qrcode.New(text, qrcode.Medium)
 	if err != nil {
@@ -43,8 +37,6 @@ func readAllStdin() (string, error) {
 	return s, nil
 }
 
-// cmdChat ouvre une discussion : chaque ligne tapée est envoyée, les messages reçus s'affichent
-// au fil de l'eau (relève toutes les 3 s).
 func cmdChat(s *State, args []string) error {
 	if len(args) != 1 {
 		return errors.New("usage : chat NOM")
@@ -65,7 +57,7 @@ func cmdChat(s *State, args []string) error {
 	fmt.Printf("Discussion avec %s, empreinte %s\n", name, SafetyNumber(c.IK))
 	fmt.Println("Tape un message puis Entrée. /quit pour quitter.")
 
-	var mu sync.Mutex // l'état (sessions, numéros) est partagé entre la relève et l'envoi
+	var mu sync.Mutex
 	poll := func() error {
 		mu.Lock()
 		defer mu.Unlock()
@@ -92,7 +84,6 @@ func cmdChat(s *State, args []string) error {
 				if err := poll(); err != nil {
 					msg = err.Error()
 				}
-				// N'affiche une erreur qu'à son apparition ou à sa disparition.
 				if msg != last {
 					if msg != "" {
 						fmt.Fprintln(os.Stderr, "relève :", msg)

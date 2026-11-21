@@ -1,6 +1,4 @@
 #!/bin/sh
-# Installeur Debian (preseed/late_command), système installé monté sur /target.
-# Journal : /var/log/paranoid-install.log du système installé.
 log=/target/var/log/paranoid-install.log
 exec >>"$log" 2>&1
 echo "== paquets du relais"

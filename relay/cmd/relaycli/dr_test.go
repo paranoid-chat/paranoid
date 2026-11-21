@@ -10,7 +10,6 @@ import (
 	"testing"
 )
 
-// peer simule un côté de la conversation : clés statiques, environnement et session.
 type peer struct {
 	name string
 	ik   ed25519.PublicKey
@@ -159,7 +158,6 @@ func TestDROutOfOrder(t *testing.T) {
 	}
 	b.recv(t, m[3], "m3")
 	b.recv(t, m[0], "m0")
-	// b répond, a change de chaîne ; les anciens messages de a restent lisibles.
 	a.recv(t, b.send(t, "r"), "r")
 	n0 := a.send(t, "n0")
 	b.recv(t, n0, "n0")
@@ -177,7 +175,7 @@ func TestDRLostMessagesAcrossRatchet(t *testing.T) {
 	a.send(t, "perdu 1")
 	a.send(t, "perdu 2")
 	a.recv(t, b.send(t, "y"), "y")
-	b.recv(t, a.send(t, "z"), "z") // PN = 3 : deux clés mises de côté
+	b.recv(t, a.send(t, "z"), "z")
 	if len(b.s.Skipped) != 2 {
 		t.Fatalf("%d clés sautées, attendu 2", len(b.s.Skipped))
 	}
@@ -187,13 +185,13 @@ func TestDRBootReplayAfterSwitch(t *testing.T) {
 	a, b := newPeers(t)
 	m0, m1, m2 := b.send(t, "b0"), b.send(t, "b1"), b.send(t, "b2")
 	a.recv(t, m0, "b0")
-	a.recv(t, m2, "b2") // m1 reste en attente : sa clé est mise de côté
+	a.recv(t, m2, "b2")
 	b.recv(t, a.send(t, "réponse"), "réponse")
 	a.recv(t, b.send(t, "ratchet"), "ratchet")
 	if err := a.recvFails(t, m0); !errors.Is(err, ErrDRReplay) {
 		t.Fatalf("rejeu d'un message de démarrage après bascule : %v", err)
 	}
-	a.recv(t, m1, "b1") // message en retard légitime : toujours lisible
+	a.recv(t, m1, "b1")
 	a.recvFails(t, m1)
 }
 
@@ -231,17 +229,14 @@ func TestDRTamperingDoesNotCorruptState(t *testing.T) {
 func TestDRForgedNewRatchetKey(t *testing.T) {
 	a, b := newPeers(t)
 	b.recv(t, a.send(t, "1"), "1")
-	// Un tiers qui a le write_id dépose un bloc avec une clé DH inventée : refusé, sans effet.
 	k, _ := ecdh.X25519().GenerateKey(rand.Reader)
 	bad := drHeader{Type: drTypeRatch, DH: k.PublicKey().Bytes(), PN: 0, N: 0}.bytes()
 	bad = append(bad, make([]byte, BlobSize-drHeaderLen)...)
 	rand.Read(bad[drHeaderLen:])
 	b.recvFails(t, bad)
-	// Bloc de démarrage forgé reçu par l'initiateur.
 	badBoot := drHeader{Type: drTypeBoot, DH: k.PublicKey().Bytes()}.bytes()
 	badBoot = append(badBoot, make([]byte, BlobSize-drHeaderLen)...)
 	a.recvFails(t, badBoot)
-	// Le répondeur refuse tout bloc de démarrage.
 	b.recvFails(t, badBoot)
 	b.recv(t, a.send(t, "2"), "2")
 }
@@ -264,7 +259,6 @@ func TestDRWrongPeer(t *testing.T) {
 	b.recv(t, m, "pour b")
 }
 
-// Un attaquant qui vole l'état de b à un instant donné perd l'accès après un aller-retour complet.
 func TestDRPostCompromiseSecurity(t *testing.T) {
 	a, b := newPeers(t)
 	b.recv(t, a.send(t, "avant"), "avant")
@@ -289,7 +283,6 @@ func TestDRPostCompromiseSecurity(t *testing.T) {
 	t.Logf("attaquant : m2 %v, m3 %v", err2, err3)
 }
 
-// Après lecture, la clé du message est effacée : l'état actuel ne permet pas de relire le passé.
 func TestDRForwardSecrecy(t *testing.T) {
 	a, b := newPeers(t)
 	m := a.send(t, "secret")
@@ -302,7 +295,6 @@ func TestDRForwardSecrecy(t *testing.T) {
 func TestDRStatePersistence(t *testing.T) {
 	a, b := newPeers(t)
 	m := a.send(t, "1")
-	// Simule un redémarrage : la session est sérialisée puis relue.
 	b.s = b.s.clone()
 	b.recv(t, m, "1")
 	a.s = a.s.clone()

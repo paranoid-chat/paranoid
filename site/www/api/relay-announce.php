@@ -1,5 +1,4 @@
 <?php
-// Point d'entrée des signaux envoyés par « paranoid-relay announce » (POST, formulaire URL-encodé).
 declare(strict_types=1);
 require __DIR__ . '/../inc/relays.php';
 

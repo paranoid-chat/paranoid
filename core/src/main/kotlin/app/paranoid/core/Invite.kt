@@ -1,9 +1,5 @@
 package app.paranoid.core
 
-// Invitation = contenu du QR (PROTOCOL.md §6), propre à un seul contact. Même format que le client Go :
-// base64url( {"v":2,"ik":"…","xk":"…","r":[{"u":"…","fp":"…","w":"…"}],"s":"…"} )
-// s = secret à usage unique de l'appairage (32 octets, voir Pairing.kt).
-
 class InviteRelay(val url: String, val fp: ByteArray, val writeId: ByteArray)
 
 class Invite(val ik: ByteArray, val xk: ByteArray, val relays: List<InviteRelay>, val secret: ByteArray) {
@@ -73,7 +69,6 @@ internal fun jsonString(s: String): String {
     return sb.append('"').toString()
 }
 
-/** Analyseur JSON minimal (objets, tableaux, chaînes, nombres, booléens, null), suffisant pour l'invitation. */
 internal object MiniJson {
     fun parse(s: String): Any? {
         val p = P(s)

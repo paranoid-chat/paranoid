@@ -5,13 +5,10 @@ import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
 
-/** Boîte que j'ai créée pour un contact : il y dépose, je relève. */
 class MyBox(val relay: RelayRef, val boxId: ByteArray, val writeId: ByteArray, val readSeed: ByteArray, var lastSeq: Long = 0)
 
-/** Boîte du contact, où je dépose. */
 class TheirBox(val relay: RelayRef, val writeId: ByteArray)
 
-// Ajouter les nouvelles valeurs à la fin : l'ordinal est sérialisé.
 enum class MessageStatus { SENDING, SENT, FAILED, RECEIVED, ALERT, RELAY_CHANGE }
 
 class ChatMessage(val id: ByteArray, val outgoing: Boolean, val ts: Long, val text: String, var status: MessageStatus)
@@ -25,13 +22,10 @@ class Contact(val name: String) {
     val seen: ArrayDeque<String> = ArrayDeque()
     val messages: MutableList<ChatMessage> = mutableListOf()
 
-    /** Bouton rouge ou changement de relais reçu : l'identité du contact est effacée, on ne lui écrit plus. */
     var burned: Boolean = false
 
-    /** Secret à usage unique de mon invitation, effacé dès que l'appairage est terminé. */
     var pairSecret: ByteArray? = null
 
-    /** Appairage terminé : clés du contact connues, et une boîte dans chaque sens. */
     val ready: Boolean get() = ik != null && myBox != null && their != null
 }
 
@@ -41,7 +35,6 @@ class AppState(
     val relay: RelayRef,
     val contacts: MutableMap<String, Contact> = LinkedHashMap(),
 ) {
-    /** Durée de conservation de l'historique local, en secondes (0 = pour toujours). */
     var historySeconds: Long = 0
 
     val ik: ByteArray get() = Ed25519.publicOf(identitySeed)
@@ -55,10 +48,9 @@ class AppState(
     }
 }
 
-/** Sérialisation binaire de l'état. Le chiffrement au repos est fait par l'appli (Keystore). */
 internal object StateCodec {
-    private const val MAGIC = 0x50524E44 // "PRND"
-    private const val VERSION = 6 // v2 : bouton rouge ; v3 : notifications (retirées en v4) ; v5 : appairage en un scan ; v6 : durée de l'historique
+    private const val MAGIC = 0x50524E44
+    private const val VERSION = 6
 
     fun encode(s: AppState): ByteArray {
         val bos = ByteArrayOutputStream()
@@ -147,9 +139,9 @@ internal object StateCodec {
                 ChatMessage(bytes(), readBoolean(), readLong(), bytes().toString(Charsets.UTF_8), MessageStatus.entries[readInt()]),
             )
         }
-        if (version < 5) readInt() // ancien compteur de messages d'inconnus, ignoré
+        if (version < 5) readInt()
         if (version >= 2) c.burned = readBoolean()
-        if (version == 3 && readBoolean()) readUTF() // ancien point de notification, ignoré
+        if (version == 3 && readBoolean()) readUTF()
         if (version >= 5) c.pairSecret = opt()
         return c
     }

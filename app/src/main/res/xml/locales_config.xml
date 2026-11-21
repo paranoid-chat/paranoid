@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Langues proposées par Android dans « Langue de l'appli » (réglage par appli, Android 13+). -->
 <locale-config xmlns:android="http://schemas.android.com/apk/res/android">
     <locale android:name="fr" />
     <locale android:name="en" />

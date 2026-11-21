@@ -6,7 +6,6 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
-    <!-- Aucune sauvegarde : ni Google, ni transfert d'appareil. Les clés ne quittent pas le téléphone. -->
     <application
         android:allowBackup="false"
         android:fullBackupContent="false"
@@ -29,8 +28,6 @@
             </intent-filter>
         </activity>
 
-
-        <!-- Scanner QR : autoriser la rotation. -->
         <activity
             android:name="com.journeyapps.barcodescanner.CaptureActivity"
             android:screenOrientation="fullSensor"

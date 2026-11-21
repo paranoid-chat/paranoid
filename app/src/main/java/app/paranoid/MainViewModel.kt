@@ -57,11 +57,6 @@ data class ContactRow(
 
 data class MessageRow(val key: String, val outgoing: Boolean, val text: String, val ts: Long, val status: MessageStatus)
 
-/** Relais de l'annuaire public, tel qu'affiché dans « Changer de relais ». */
-/**
- * Relais de repli de l'identité leurre (code de destruction, ancien état illisible, annuaire vide ou
- * injoignable) : adresse réservée (.invalid), jamais affichée ; l'appli demande alors de choisir un relais.
- */
 const val NO_RELAY_URL = "https://relay.invalid"
 
 data class RelayRow(val name: String, val url: String, val fp: String, val version: String, val lastSeen: Long, val online: Boolean)
@@ -81,12 +76,9 @@ data class Ui(
     val error: String? = null,
     val info: String? = null,
     val connectionError: String? = null,
-    /** Annuaire public : null = pas encore chargé (aucune requête vers getparanoid.fr avant le bouton). */
     val directory: List<RelayRow>? = null,
-    /** Empreinte lue sur un relais privé, pour l'adresse [probedUrl]. */
     val probedUrl: String? = null,
     val probedFp: String? = null,
-    /** Identité sans relais utilisable (voir [NO_RELAY_URL]). */
     val noRelay: Boolean = false,
 )
 
@@ -94,7 +86,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val store = StateStore(app)
     private var messenger: Messenger? = null
 
-    /** État en attente des codes (nouvelle identité ou migration depuis la v0.1). */
     private var pending: AppState? = null
     private var duressJob: Job? = null
     private var autoLockJob: Job? = null
@@ -105,7 +96,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val maxText = MAX_TEXT
     val minCode = LockBox.MIN_CODE_LENGTH
 
-    /** Enregistre l'état chiffré puis met l'affichage à jour (appelé par le Messenger, sous son verrou). */
     private fun persist(s: AppState) {
         store.save(s)
         refresh()
@@ -128,8 +118,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // ---------- état affiché ----------
-
     private fun rows(c: Contact) = ContactRow(
         name = c.name,
         ready = c.ready,
@@ -139,14 +127,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         burned = c.burned,
     )
 
-    /** Recalcule l'affichage à partir de l'état (sous le verrou du Messenger). */
     private fun refresh(screen: Screen? = null) {
         val m = messenger ?: return
         synchronized(m) {
             if (messenger !== m) return
             val contacts = m.state.contacts.values.map(::rows).sortedByDescending { it.lastTs }
-            // L'écran courant est lu dans update (atomique) : une relève en cours ne peut pas
-            // ramener un écran que l'utilisateur vient de quitter.
             _ui.update { cur ->
                 val target = screen ?: cur.screen
                 val chat = (target as? Screen.Chat)?.let { s ->
@@ -179,8 +164,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // ---------- navigation ----------
-
     fun goContacts() = viewModelScope.launch(Dispatchers.IO) {
         _ui.update { it.copy(add = AddFlow(), error = null, info = null) }
         refresh(Screen.Contacts)
@@ -191,7 +174,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun openChat(name: String) = viewModelScope.launch(Dispatchers.IO) {
         val c = messenger?.state?.contacts?.get(name)
         if (c != null && !c.ready && !c.burned) {
-            // Invitation pas encore scannée : on réaffiche le même QR.
             _ui.update { it.copy(screen = Screen.AddContact, add = AddFlow(name, null), error = null, info = null) }
             createInvite(name)
         } else {
@@ -201,10 +183,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun dismissMessages() = _ui.update { it.copy(error = null, info = null) }
 
-    // ---------- identité et codes ----------
-
     fun setup(url: String, fp: String) = action {
-        duressJob?.join() // un effacement en cours doit être terminé avant toute nouvelle identité
+        duressJob?.join()
         val relay = RelayRef(url.trim().trimEnd('/'), parseFingerprint(fp))
         require(relay.url.startsWith("https://")) { tr("l'adresse du relais doit commencer par https://", "the relay address must start with https://") }
         pending = Messenger.createIdentity(relay)
@@ -236,22 +216,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /**
-     * Code de destruction, avec leurre : l'appli fait comme si le code était bon et s'ouvre sur
-     * une liste de contacts vide. Pendant ce temps, sans interruption possible :
-     *  1. l'ancien état est chargé en mémoire ;
-     *  2. la clé Keystore et le coffre sont détruits (plus rien n'est déchiffrable sur le disque) ;
-     *  3. une nouvelle identité est créée, dont le code de déverrouillage est le code qui vient
-     *     d'être saisi (le code de destruction est aléatoire, à redéfinir dans « Changer mes codes ») ;
-     *  4. les alertes partent depuis la mémoire (5 s maximum), puis l'ancien état est oublié.
-     * Rien ne distingue cet écran d'une appli dont on aurait supprimé tous les contacts.
-     */
     private fun redButton(code: String) {
         val old = runCatching { store.load() }.getOrNull()
         val m = messenger
         if (m != null) synchronized(m) { messenger = null }
-        // Nouvelle identité sur le même relais. Ancien état illisible : premier relais en ligne de
-        // l'annuaire public, cherché en arrière-plan ; à défaut, NO_RELAY_URL (rien n'est affiché).
         var fresh = AppState.newIdentity(old?.relay ?: RelayRef(NO_RELAY_URL, ByteArray(32)))
         _ui.value = if (old != null) {
             Ui(screen = Screen.Contacts, mySafety = safetyNumber(fresh.ik), relayUrl = fresh.relay.url, relayFp = formatFingerprint(fresh.relay.fp))
@@ -279,7 +247,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun goChangeCodes() = _ui.update { it.copy(screen = Screen.ChangeCodes, error = null, info = null) }
 
-    /** Change les deux codes ; le code actuel est exigé. Le code de destruction y déclenche aussi le bouton rouge. */
     fun changeCodes(current: String, unlock: String, unlockAgain: String, duress: String, duressAgain: String) = action {
         require(unlock == unlockAgain) { tr("les deux saisies du nouveau code de déverrouillage diffèrent", "the two entries of the new unlock code differ") }
         require(duress == duressAgain) { tr("les deux saisies du nouveau code de destruction diffèrent", "the two entries of the new destruction code differ") }
@@ -300,10 +267,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun goSettings() = _ui.update { it.copy(screen = Screen.Settings, error = null, info = null) }
 
-    /** Nombre de messages qu'effacerait une conservation de [seconds] secondes. */
     fun countOlderThan(seconds: Long): Int = messenger?.countOlderThan(seconds) ?: 0
 
-    /** Change la durée de conservation de l'historique ; la purge est immédiate. */
     fun setHistory(seconds: Long) = action {
         val m = messenger ?: return@action
         val n = m.setHistory(seconds)
@@ -315,7 +280,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun goDonation() = _ui.update { it.copy(screen = Screen.Donation, error = null, info = null) }
 
-    /** Charge l'annuaire public de getparanoid.fr (à la demande seulement). */
     fun loadDirectory() = action {
         val list = RelayDirectory.fetch().map {
             RelayRow(it.name, it.url, formatFingerprint(it.fp), it.version, it.lastSeen, it.online)
@@ -323,7 +287,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _ui.update { it.copy(directory = list) }
     }
 
-    /** Lit l'empreinte présentée par un relais privé ; elle s'affiche pour être vérifiée avant l'épinglage. */
     fun probeRelay(url: String) = action {
         val u = url.trim().trimEnd('/')
         val fp = formatFingerprint(RelayDirectory.probeFingerprint(u))
@@ -334,14 +297,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun goLearn() = _ui.update { it.copy(screen = Screen.Learn, error = null, info = null) }
 
-    /**
-     * Changement de relais, volontairement sans migration : tout est perdu.
-     *  1. le code actuel est exigé (le code de destruction y déclenche le bouton rouge) ;
-     *  2. le nouveau relais est testé (TLS et empreinte) avant de toucher à quoi que ce soit ;
-     *  3. chaque contact reçoit « X a changé de relais » sur l'ancien relais (5 s maximum) ;
-     *  4. clé Keystore et fichiers sont détruits, puis une nouvelle identité est créée sur le
-     *     nouveau relais ; ses codes sont à choisir à nouveau.
-     */
     fun changeRelay(current: String, url: String, fp: String) = action {
         val relay = RelayRef(url.trim().trimEnd('/'), parseFingerprint(fp))
         require(relay.url.startsWith("https://")) { tr("l'adresse du relais doit commencer par https://", "the relay address must start with https://") }
@@ -352,7 +307,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 error(if (r.waitSeconds > 0) tr("Code actuel incorrect. Prochain essai dans ${r.waitSeconds} s.", "Wrong current code. Next attempt in ${r.waitSeconds} s.") else tr("Code actuel incorrect.", "Wrong current code."))
             is StateStore.UnlockResult.Throttled -> error(tr("Trop d'essais. Nouvel essai possible dans ${r.waitSeconds} s.", "Too many attempts. Try again in ${r.waitSeconds} s."))
         }
-        val fresh = Messenger.createIdentity(relay) // échoue si le relais est injoignable ou l'empreinte fausse
+        val fresh = Messenger.createIdentity(relay)
         val m = messenger ?: error(tr("appli verrouillée", "app locked"))
         synchronized(m) {
             runCatching { m.sendAlerts(5_000, TYPE_RELAY_CHANGE) }
@@ -366,7 +321,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _ui.value = Ui(screen = Screen.SetCodes(migrating = false), info = tr("Relais changé. Choisir les codes de la nouvelle identité.", "Relay changed. Choose the codes of the new identity."))
     }
 
-    /** Verrouille : la clé de données et l'état déchiffré sont oubliés. */
     fun lock() {
         autoLockJob?.cancel()
         val m = messenger ?: return
@@ -377,7 +331,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _ui.value = Ui(screen = Screen.Locked)
     }
 
-    /** Verrouillage automatique après 60 s en arrière-plan (scanner QR et partage compris). */
     fun onAppBackground() {
         if (messenger == null) return
         autoLockJob?.cancel()
@@ -392,8 +345,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (messenger != null) pollNow()
     }
 
-    // ---------- messagerie ----------
-
     fun createInvite(name: String) = action {
         val m = messenger ?: return@action
         val invite = m.invite(name)
@@ -401,7 +352,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         refresh()
     }
 
-    /** J'ai scanné (ou collé) l'invitation de [name] : l'appairage lui est envoyé, la discussion s'ouvre. */
     fun addScanned(name: String, invite: String) = action {
         val m = messenger ?: return@action
         val c = m.join(name, invite)
@@ -419,7 +369,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (text.isBlank()) return
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                // Chaque enregistrement rafraîchit l'écran : le message apparaît « envoi… », puis « envoyé ».
                 messenger?.send(name, text)
             } catch (e: Exception) {
                 _ui.update { it.copy(error = tr("Échec de l'envoi : ${e.message}", "Sending failed: ${e.message}")) }
@@ -446,9 +395,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _ui.value = Ui(screen = Screen.Setup)
     }
 
-    // ---------- relève ----------
-
-    /** Boucle de relève, active tant que l'appli est au premier plan. */
     suspend fun pollLoop() {
         while (kotlinx.coroutines.currentCoroutineContext().isActive) {
             val ok = withContext(Dispatchers.IO) { pollOnce() }
@@ -456,7 +402,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Relève immédiate (retour au premier plan). */
     fun pollNow() {
         viewModelScope.launch(Dispatchers.IO) { pollOnce() }
     }

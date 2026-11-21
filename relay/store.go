@@ -15,17 +15,15 @@ var (
 	ErrQuota    = errors.New("quota atteint")
 )
 
-// Message est un enregistrement renvoyé à la relève.
 type Message struct {
 	Seq     uint64
 	TS      int64
 	Payload []byte
 }
 
-// Store encapsule la base SQLite. Les blobs sont opaques pour le relais.
 type Store struct {
 	db  *sql.DB
-	dir string // dossier de la base, pour mesurer l'espace disque libre
+	dir string
 }
 
 const schema = `
@@ -47,14 +45,12 @@ CREATE TABLE IF NOT EXISTS msgs (
 CREATE INDEX IF NOT EXISTS msgs_ts ON msgs(ts);
 `
 
-// OpenStore ouvre (ou crée) la base SQLite au chemin indiqué.
 func OpenStore(path string) (*Store, error) {
 	dsn := "file:" + path + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
 	}
-	// Un seul accès simultané : simple et suffisant pour ce service.
 	db.SetMaxOpenConns(1)
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
@@ -65,8 +61,6 @@ func OpenStore(path string) (*Store, error) {
 
 func (s *Store) Close() error { return s.db.Close() }
 
-// UsedBytes renvoie l'espace réellement occupé dans la base : les pages libérées, que SQLite
-// réutilise, ne comptent pas.
 func (s *Store) UsedBytes() (int64, error) {
 	var pages, free, size int64
 	if err := s.db.QueryRow("PRAGMA page_count").Scan(&pages); err != nil {
@@ -81,7 +75,6 @@ func (s *Store) UsedBytes() (int64, error) {
 	return (pages - free) * size, nil
 }
 
-// FreeBytes renvoie l'espace disque disponible là où se trouve la base.
 func (s *Store) FreeBytes() (int64, error) { return diskFree(s.dir) }
 
 func randomID() ([]byte, error) {
@@ -90,7 +83,6 @@ func randomID() ([]byte, error) {
 	return b, err
 }
 
-// CreateBox crée une boîte et renvoie (box_id, write_id).
 func (s *Store) CreateBox(pub []byte, now int64) (boxID, writeID []byte, err error) {
 	if boxID, err = randomID(); err != nil {
 		return nil, nil, err
@@ -107,7 +99,6 @@ func (s *Store) CreateBox(pub []byte, now int64) (boxID, writeID []byte, err err
 	return boxID, writeID, nil
 }
 
-// PubKey renvoie la clé publique de lecture d'une boîte.
 func (s *Store) PubKey(boxID []byte) ([]byte, error) {
 	var pub []byte
 	err := s.db.QueryRow(`SELECT pubkey FROM boxes WHERE box_id = ?`, boxID).Scan(&pub)
@@ -117,7 +108,6 @@ func (s *Store) PubKey(boxID []byte) ([]byte, error) {
 	return pub, err
 }
 
-// WriteIDExists indique si un write_id correspond à une boîte existante.
 func (s *Store) WriteIDExists(writeID []byte) (bool, error) {
 	var one int
 	err := s.db.QueryRow(`SELECT 1 FROM boxes WHERE write_id = ?`, writeID).Scan(&one)
@@ -127,7 +117,6 @@ func (s *Store) WriteIDExists(writeID []byte) (bool, error) {
 	return err == nil, err
 }
 
-// Deposit ajoute un message. Renvoie ErrNotFound ou ErrQuota le cas échéant.
 func (s *Store) Deposit(writeID, payload []byte, now int64, quota int) (uint64, error) {
 	tx, err := s.db.BeginTx(context.Background(), nil)
 	if err != nil {
@@ -160,7 +149,6 @@ func (s *Store) Deposit(writeID, payload []byte, now int64, quota int) (uint64, 
 	return next, tx.Commit()
 }
 
-// Fetch renvoie jusqu'à limit messages de séquence > after, et si d'autres restent.
 func (s *Store) Fetch(boxID []byte, after uint64, limit int) ([]Message, bool, error) {
 	rows, err := s.db.Query(
 		`SELECT seq, ts, payload FROM msgs WHERE box_id = ? AND seq > ? ORDER BY seq LIMIT ?`,
@@ -187,19 +175,16 @@ func (s *Store) Fetch(boxID []byte, after uint64, limit int) ([]Message, bool, e
 	return out, more, nil
 }
 
-// Touch note une relève authentifiée (repousse l'expiration de la boîte).
 func (s *Store) Touch(boxID []byte, now int64) error {
 	_, err := s.db.Exec(`UPDATE boxes SET last_read = ? WHERE box_id = ?`, now, boxID)
 	return err
 }
 
-// Ack supprime les messages de séquence <= upto.
 func (s *Store) Ack(boxID []byte, upto uint64) error {
 	_, err := s.db.Exec(`DELETE FROM msgs WHERE box_id = ? AND seq <= ?`, boxID, upto)
 	return err
 }
 
-// DeleteBox supprime une boîte et ses messages.
 func (s *Store) DeleteBox(boxID []byte) error {
 	tx, err := s.db.BeginTx(context.Background(), nil)
 	if err != nil {
@@ -215,7 +200,6 @@ func (s *Store) DeleteBox(boxID []byte) error {
 	return tx.Commit()
 }
 
-// Purge supprime les messages plus vieux que ttl et les boîtes sans relève depuis boxExpiry (secondes).
 func (s *Store) Purge(now, ttl, boxExpiry int64) error {
 	tx, err := s.db.BeginTx(context.Background(), nil)
 	if err != nil {

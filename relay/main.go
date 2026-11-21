@@ -18,7 +18,6 @@ import (
 	"time"
 )
 
-// version est fixée à la compilation : -ldflags "-X main.version=1.0.0".
 var version = "dev"
 
 func fingerprint(der []byte) string {
@@ -30,7 +29,6 @@ func fingerprint(der []byte) string {
 	return strings.Join(parts, ":")
 }
 
-// parseSize lit une taille en octets, avec un suffixe binaire facultatif : K, M, G ou T.
 func parseSize(v string) (int64, error) {
 	v = strings.ToUpper(strings.TrimSpace(v))
 	mult := int64(1)
@@ -109,7 +107,7 @@ func main() {
 		WriteTimeout:      15 * time.Second,
 		IdleTimeout:       60 * time.Second,
 		MaxHeaderBytes:    8 << 10,
-		ErrorLog:          log.New(io.Discard, "", 0), // pas de journal applicatif
+		ErrorLog:          log.New(io.Discard, "", 0),
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -137,7 +135,6 @@ func main() {
 		httpSrv.Shutdown(shutdownCtx)
 	}()
 
-	// Seul message de démarrage : adresse et empreinte à comparer avec celle de openssl.
 	log.Printf("relais à l'écoute sur %s, empreinte SHA-256 : %s, base max %s, espace libre min %s",
 		*listen, fingerprint(cert.Certificate[0]), human(cfg.MaxDB), human(cfg.MinFree))
 	if err := httpSrv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {

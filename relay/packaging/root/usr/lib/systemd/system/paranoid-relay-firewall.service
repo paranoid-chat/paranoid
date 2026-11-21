@@ -1,8 +1,6 @@
 [Unit]
 Description=Pare-feu du relais Paranoid (table nftables inet paranoid_relay)
 Documentation=https://getparanoid.fr
-# Si nftables.service recharge /etc/nftables.conf (qui commence souvent par
-# « flush ruleset »), la table du relais est rechargée juste après.
 After=nftables.service
 PartOf=nftables.service
 ReloadPropagatedFrom=nftables.service

@@ -11,8 +11,6 @@ import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocketFactory
 import javax.net.ssl.X509TrustManager
 
-// Client HTTP du relais (PROTOCOL.md §3 et §4), avec épinglage du certificat par empreinte SHA-256.
-
 class RelayRef(val url: String, val fp: ByteArray)
 
 open class RelayException(msg: String, val status: Int = 0) : Exception(msg)
@@ -42,7 +40,6 @@ class RelayClient(private val ref: RelayRef, private val timeoutMs: Int = 20_000
     }
 
     private val socketFactory: SSLSocketFactory by lazy {
-        // Pas d'autorité de certification : seule l'empreinte du certificat compte.
         SSLContext.getInstance("TLSv1.3").apply {
             init(null, arrayOf(PinningTrustManager(ref.fp.copyOf())), SecureRandom())
         }.socketFactory
@@ -54,7 +51,6 @@ class RelayClient(private val ref: RelayRef, private val timeoutMs: Int = 20_000
         val conn = URI(base + pathQuery).toURL().openConnection() as HttpsURLConnection
         try {
             conn.sslSocketFactory = socketFactory
-            // L'identité du serveur est garantie par l'empreinte ; le nom d'hôte n'apporte rien de plus.
             conn.hostnameVerifier = javax.net.ssl.HostnameVerifier { _, _ -> true }
             conn.connectTimeout = timeoutMs
             conn.readTimeout = timeoutMs
@@ -89,13 +85,11 @@ class RelayClient(private val ref: RelayRef, private val timeoutMs: Int = 20_000
         throw RelayException(tr("relais : ${r.code} (${r.body.toString(Charsets.UTF_8).trim()})", "relay: ${r.code} (${r.body.toString(Charsets.UTF_8).trim()})"), r.code)
     }
 
-    /** Vérifie que le relais répond et que l'empreinte correspond (une boîte inconnue renvoie 404). */
     fun check() {
         val r = request("GET", "/v1/box/${b64(ByteArray(16))}/msgs", null, null)
         if (r.code != 404) fail(r)
     }
 
-    /** Crée une boîte ; renvoie (box_id, write_id). */
     fun createBox(readPub: ByteArray): Pair<ByteArray, ByteArray> {
         val r = request("POST", "/v1/box", readPub, null)
         if (r.code != 201 || r.body.size != 32) fail(r)
@@ -111,7 +105,6 @@ class RelayClient(private val ref: RelayRef, private val timeoutMs: Int = 20_000
         return seq
     }
 
-    /** Relève jusqu'à [limit] messages après [after] ; le booléen indique s'il en reste. */
     fun fetch(boxId: ByteArray, readSeed: ByteArray, after: Long, limit: Int = 50): Pair<List<Record>, Boolean> {
         val r = request("GET", "/v1/box/${b64(boxId)}/msgs?after=$after&limit=$limit", null, readSeed)
         val size = 16 + BLOB_SIZE

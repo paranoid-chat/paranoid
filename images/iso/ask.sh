@@ -1,8 +1,4 @@
 #!/bin/sh
-# Installeur Debian (partman/early_command) : les seules questions de l'installation.
-#   1. mot de passe root (case « afficher en clair » de l'installeur), 14 caractères et 3 types ;
-#   2. disque où installer (le support d'installation n'est pas proposé) ;
-#   3. en BIOS : démarrage sur ce disque, ou sur un autre choisi dans une liste.
 . /usr/share/debconf/confmodule
 db_capb backup
 
@@ -81,13 +77,12 @@ strong() {
 	[ $c -ge 3 ]
 }
 
-ask() { # ask QUESTION : affiche une question (toujours, même déjà vue)
+ask() {
 	db_fset "$1" seen false
 	db_input critical "$1" || true
 	db_go
 }
 
-# ---------- 1. mot de passe root ----------
 db_settitle paranoid/title-users
 while :; do
 	db_set paranoid/root-password ""
@@ -112,8 +107,6 @@ p1=""
 db_set paranoid/root-password ""
 db_set paranoid/root-password-again ""
 
-# ---------- 2. disque ----------
-# Disque du support d'installation (clé USB) : jamais proposé.
 media=$(awk '$2 == "/cdrom" { print $1; exit }' /proc/mounts)
 case $media in
 /dev/nvme*p[0-9]* | /dev/mmcblk*p[0-9]*) media=${media%p[0-9]*} ;;
@@ -139,7 +132,6 @@ db_get paranoid/disk
 disk=${RET%% *}
 boot=$disk
 
-# ---------- 3. démarrage (BIOS seulement ; en UEFI, partition EFI du disque choisi) ----------
 if [ ! -d /sys/firmware/efi ]; then
 	db_subst paranoid/boot-main DISK "$disk"
 	until ask paranoid/boot-main; do :; done
@@ -153,7 +145,6 @@ if [ ! -d /sys/firmware/efi ]; then
 fi
 
 logger -t paranoid "disque $disk, démarrage $boot"
-# Partitionnement automatique de ce disque, chargeur de démarrage sans question.
 echo "d-i partman-auto/disk string $disk" | debconf-set-selections
 echo "d-i grub-installer/bootdev string $boot" | debconf-set-selections
 db_set partman-auto/disk "$disk" && db_fset partman-auto/disk seen true

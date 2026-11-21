@@ -1,18 +1,5 @@
 package main
 
-// Double Ratchet (format de message v2), d'après la spécification de Signal :
-// https://signal.org/docs/specifications/doubleratchet/
-//
-// Adaptations à notre modèle (voir MESSAGES.md) :
-//   - Pas de X3DH : le secret initial SK vient des clés X25519 statiques échangées par QR.
-//   - Rôles fixes : l'« initiateur » est celui dont la clé d'identité Ed25519 est la plus petite
-//     (ordre des octets). Il peut écrire tout de suite, comme Alice dans la spécification.
-//   - Le « répondeur » ne peut pas utiliser le ratchet avant d'avoir reçu un message. S'il écrit
-//     en premier, il utilise une chaîne de démarrage (boot) à sens unique, dérivée de SK et d'une
-//     clé éphémère, jusqu'à la réception du premier message de l'initiateur.
-//   - Chiffrement : AES-256-GCM, clé et nonce dérivés de la clé de message (usage unique).
-//   - L'en-tête est en clair (pas de chiffrement d'en-tête dans cette version).
-
 import (
 	"bytes"
 	"crypto/aes"
@@ -33,12 +20,12 @@ const (
 	drTypeRatch = 0
 	drTypeBoot  = 1
 
-	drHeaderLen = 1 + 1 + 32 + 4 + 4 // version, type, clé DH, PN, N
+	drHeaderLen = 1 + 1 + 32 + 4 + 4
 	drInnerLen  = BlobSize - drHeaderLen - tagLen
-	MaxTextV2   = drInnerLen - innerHead // 1963 octets
+	MaxTextV2   = drInnerLen - innerHead
 
-	maxSkip     = 1000 // clés sautées au maximum pour un seul message
-	maxSkipped  = 2000 // clés sautées conservées au total
+	maxSkip     = 1000
+	maxSkipped  = 2000
 	drInfoSK    = "relay-dr-v1/sk"
 	drInfoRK    = "relay-dr-v1/rk"
 	drInfoBoot  = "relay-dr-v1/boot"
@@ -65,7 +52,6 @@ type skippedKey struct {
 	MK []byte `json:"mk"`
 }
 
-// Session est l'état du ratchet pour un contact. Il évolue à chaque message envoyé ou reçu.
 type Session struct {
 	Initiator bool         `json:"initiator"`
 	RK        []byte       `json:"rk"`
@@ -77,11 +63,10 @@ type Session struct {
 	Nr        uint32       `json:"nr"`
 	PN        uint32       `json:"pn"`
 	Skipped   []skippedKey `json:"skipped,omitempty"`
-	BootSend  *chainState  `json:"boot_send,omitempty"` // répondeur, avant sa première réception
-	BootRecv  *chainState  `json:"boot_recv,omitempty"` // initiateur, chaîne de démarrage du répondeur
+	BootSend  *chainState  `json:"boot_send,omitempty"`
+	BootRecv  *chainState  `json:"boot_recv,omitempty"`
 }
 
-// drEnv regroupe les éléments dérivés des clés statiques, recalculés à chaque usage (jamais stockés).
 type drEnv struct {
 	SK      []byte
 	AD      []byte
@@ -124,8 +109,6 @@ func concat(parts ...[]byte) []byte {
 	}
 	return out
 }
-
-// ---------- fonctions de dérivation ----------
 
 func kdfRK(rk, dhOut []byte) (newRK, ck []byte, err error) {
 	out, err := hkdf.Key(sha256.New, dhOut, rk, drInfoRK, 64)
@@ -184,12 +167,8 @@ func dh(priv, pub []byte) ([]byte, error) {
 	return k.ECDH(p)
 }
 
-// ---------- initialisation ----------
-
-// NewSession crée l'état initial à partir des clés statiques (le résultat du double scan).
 func NewSession(e *drEnv) (*Session, error) {
 	if !e.init {
-		// Répondeur : sa paire DH initiale est sa clé statique, la chaîne d'envoi n'existe pas encore.
 		return &Session{Initiator: false, RK: append([]byte(nil), e.SK...), DHsPriv: e.myX.Bytes()}, nil
 	}
 	k, err := ecdh.X25519().GenerateKey(rand.Reader)
@@ -218,8 +197,6 @@ func (s *Session) clone() *Session {
 	}
 	return &c
 }
-
-// ---------- en-tête ----------
 
 type drHeader struct {
 	Type byte
@@ -256,10 +233,6 @@ func parseDRHeader(blob []byte) (drHeader, error) {
 	return h, nil
 }
 
-// ---------- chiffrement ----------
-
-// Encrypt chiffre inner (drInnerLen octets) et fait avancer la chaîne d'envoi.
-// L'appelant doit sauvegarder la session AVANT de déposer le message, pour ne jamais réutiliser une clé.
 func (s *Session) Encrypt(e *drEnv, inner []byte) ([]byte, error) {
 	if len(inner) != drInnerLen {
 		return nil, errors.New("taille de contenu incorrecte")
@@ -289,7 +262,6 @@ func (s *Session) Encrypt(e *drEnv, inner []byte) ([]byte, error) {
 			if err != nil {
 				return nil, err
 			}
-			// La clé privée éphémère n'est pas conservée.
 			s.BootSend = &chainState{DH: eph.PublicKey().Bytes(), CK: ck}
 		}
 		s.BootSend.CK, mk = kdfCK(s.BootSend.CK)
@@ -310,8 +282,6 @@ func (s *Session) Encrypt(e *drEnv, inner []byte) ([]byte, error) {
 	return blob, nil
 }
 
-// Decrypt déchiffre un bloc v2. L'état n'est modifié que si le déchiffrement réussit :
-// un bloc forgé ou altéré ne peut pas désynchroniser la session.
 func (s *Session) Decrypt(e *drEnv, blob []byte) ([]byte, error) {
 	h, err := parseDRHeader(blob)
 	if err != nil {
@@ -344,7 +314,6 @@ func (c *Session) takeSkipped(dhKey []byte, n uint32) []byte {
 	return nil
 }
 
-// skipTo dérive et met de côté les clés des messages [ch.N, until) d'une chaîne de réception.
 func (c *Session) skipTo(dhKey []byte, ck *[]byte, n *uint32, until uint32) error {
 	if until < *n {
 		return ErrDRReplay
@@ -374,9 +343,6 @@ func (c *Session) messageKey(e *drEnv, h drHeader) ([]byte, error) {
 			return nil, ErrDecrypt
 		}
 		if c.CKr != nil {
-			// Le répondeur est déjà passé au ratchet : il n'envoie plus de démarrage. Comme la chaîne
-			// de démarrage se recalcule depuis les clés statiques, la recréer permettrait de rejouer
-			// d'anciens messages : seules les clés déjà mises de côté restent valables.
 			return nil, ErrDRReplay
 		}
 		if c.BootRecv == nil || !bytes.Equal(c.BootRecv.DH, h.DH) {
@@ -408,8 +374,6 @@ func (c *Session) messageKey(e *drEnv, h drHeader) ([]byte, error) {
 		if err := c.dhRatchet(h.DH); err != nil {
 			return nil, err
 		}
-		// Le répondeur a reçu le ratchet de l'initiateur : fin de la chaîne de démarrage.
-		// L'initiateur reçoit un message ratchet du répondeur : celui-ci n'enverra plus de boot.
 		c.BootSend = nil
 		c.BootRecv = nil
 	}
@@ -428,7 +392,6 @@ func (c *Session) messageKey(e *drEnv, h drHeader) ([]byte, error) {
 func mustPub(b []byte) *ecdh.PublicKey {
 	p, err := ecdh.X25519().NewPublicKey(b)
 	if err != nil {
-		// NewPublicKey n'échoue que sur une mauvaise longueur, déjà contrôlée par l'en-tête.
 		panic(err)
 	}
 	return p
@@ -456,8 +419,6 @@ func (c *Session) dhRatchet(theirDH []byte) error {
 	c.RK, c.CKs, err = kdfRK(c.RK, out)
 	return err
 }
-
-// ---------- contenu clair v2 ----------
 
 func encodeInnerV2(p Plain) ([]byte, error) {
 	if len(p.Body) > MaxTextV2 {

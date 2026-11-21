@@ -1,9 +1,5 @@
 name: Images du relais
 
-# ISO Debian amd64 et image Raspberry Pi (arm64) du relais, publiées dans une release
-# « relay-vVERSION » qui ne devient jamais « latest » (le lien de l'APK reste valable).
-# Les deux images se construisent en parallèle et sont envoyées dans une release brouillon,
-# publiée quand les deux sont prêtes (pas d'artefacts : ils dépasseraient le quota).
 on:
   push:
     branches: [main]
@@ -106,7 +102,6 @@ jobs:
       - name: Image Raspberry Pi (arm64)
         run: |
           v=${{ needs.prepare.outputs.version }}
-          # Émulation arm64 pour le chroot (binfmt_misc, interpréteur chargé à l'enregistrement).
           docker run --privileged --rm tonistiigi/binfmt --install arm64
           sudo bash images/pi/build.sh "$v" "out/paranoid-relay_${v}_arm64.deb" out
       - name: Envoi dans la release

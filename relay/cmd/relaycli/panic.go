@@ -1,8 +1,5 @@
 package main
 
-// Bouton rouge côté PC (tests) : envoie l'alerte à tous les contacts, puis efface l'identité.
-// La destruction n'attend jamais le réseau plus de quelques secondes.
-
 import (
 	"crypto/rand"
 	"errors"
@@ -76,7 +73,6 @@ func cmdPanic(s *State, dir string, args []string) error {
 	case <-time.After(5 * time.Second):
 	}
 
-	// Effacement : la session ne doit jamais être réutilisée, même si l'alerte n'est pas partie.
 	if err := os.RemoveAll(dir); err != nil {
 		return fmt.Errorf("effacement de %s : %w", dir, err)
 	}

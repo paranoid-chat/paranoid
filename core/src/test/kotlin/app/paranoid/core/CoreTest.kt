@@ -125,7 +125,6 @@ class PairingTest {
             val bad = blob.copyOf(); bad[i] = (bad[i].toInt() xor 1).toByte()
             assertTrue(Pairing.open(inviterX, inviterIk, secret, bad) == null)
         }
-        // Quelqu'un qui a vu le QR annonce l'ik de la victime avec sa propre clé xk : refusé.
         val mallory = Ed25519.newSeed()
         val forged = PairPayload(payload.ik, X25519.publicOf(X25519.generatePrivate()), payload.writeId, payload.relay)
         assertTrue(Pairing.open(inviterX, inviterIk, secret, Pairing.seal(mallory, inviterIk, X25519.publicOf(inviterX), secret, forged)) == null)
@@ -162,7 +161,6 @@ private class Peer(val name: String) {
     }
 }
 
-/** Renvoie (initiateur, répondeur). */
 private fun peers(): Pair<Peer, Peer> {
     val a = Peer("a")
     val b = Peer("b")
@@ -378,7 +376,7 @@ class HistoryTest {
         val st = stateWith(now)
         var saves = 0
         val m = Messenger(st, persist = { saves++ })
-        assertEquals(0, m.purgeHistory(now)) // pour toujours par défaut
+        assertEquals(0, m.purgeHistory(now))
         assertEquals(2, m.countOlderThan(86_400, now))
         st.historySeconds = 7 * 86_400L
         assertEquals(1, m.purgeHistory(now))

@@ -34,7 +34,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import app.paranoid.core.tr
 
-/** Même adresse que la section Donation de getparanoid.fr/contact.php (somme de contrôle vérifiée). */
 const val MONERO_ADDRESS =
     "439L8VnuoL25KmyM5TvEsf4zaCWKcdXhe62hryuMCNJZVxSfxqvT5iXiMaPPznvdQVL7pB3gL3e1K3xem2AeccTiFbYLMNX"
 
@@ -85,7 +84,6 @@ private fun copyAddress(ctx: Context) {
     cm.setPrimaryClip(ClipData.newPlainText(tr("Adresse Monero", "Monero address"), MONERO_ADDRESS))
 }
 
-/** Menu de partage Android (e-mail, messagerie…) avec l'adresse en texte. */
 private fun shareAddress(ctx: Context) {
     val send = Intent(Intent.ACTION_SEND).setType("text/plain")
         .putExtra(Intent.EXTRA_SUBJECT, tr("Adresse Monero de Paranoid", "Paranoid Monero address"))

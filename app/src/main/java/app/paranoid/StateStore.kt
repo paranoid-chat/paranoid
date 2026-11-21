@@ -20,20 +20,6 @@ import javax.crypto.SecretKey
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.GCMParameterSpec
 
-/**
- * Stockage chiffré de l'état (identité, contacts, sessions, historique).
- *
- *  - state.bin : l'état, en AES-256-GCM avec une clé de données aléatoire ;
- *  - lock.bin  : la clé de données dans un [LockBox] (code de déverrouillage OU code de
- *                destruction, Argon2id), lui-même chiffré par une clé non exportable du Keystore
- *                (StrongBox si disponible) : sans le téléphone, impossible de tenter les codes ;
- *  - attempts  : compteur d'échecs pour la temporisation.
- *
- * Ancien format (v0.1) : dek.bin = clé de données chiffrée par le Keystore seul. Il est migré
- * dès que l'utilisateur choisit ses codes.
- *
- * Détruire l'entrée Keystore rend tout illisible instantanément.
- */
 class StateStore(context: Context) {
     enum class Status { EMPTY, LEGACY, LOCKED }
 
@@ -61,13 +47,11 @@ class StateStore(context: Context) {
         else -> Status.EMPTY
     }
 
-    /** Nouvelle identité : la clé de données est créée en mémoire, rien n'est écrit avant [setCodes]. */
     @Synchronized
     fun beginNew() {
         dek = randomBytes(32)
     }
 
-    /** v0.1 : ouvre l'ancien état (Keystore seul) ; les codes doivent ensuite être définis. */
     @Synchronized
     fun openLegacy(): AppState {
         val raw = legacyDek.readFully()
@@ -81,7 +65,6 @@ class StateStore(context: Context) {
         return AppState.decode(plain)
     }
 
-    /** Enregistre l'état et protège la clé de données par les deux codes. */
     @Synchronized
     fun setCodes(state: AppState, unlockCode: String, duressCode: String) {
         val key = dek ?: error(tr("aucune clé de données en mémoire", "no data key in memory"))
@@ -93,10 +76,6 @@ class StateStore(context: Context) {
         legacyState.delete()
     }
 
-    /**
-     * Remplace les deux codes, après vérification du code actuel. Si le code actuel saisi est le
-     * code de destruction, renvoie [UnlockResult.Duress] : le bouton rouge s'applique partout.
-     */
     @Synchronized
     fun changeCodes(current: String, unlockCode: String, duressCode: String): UnlockResult {
         LockBox.validateCodes(unlockCode, duressCode)
@@ -105,7 +84,6 @@ class StateStore(context: Context) {
         return r
     }
 
-    /** Essaie un code. Les deux emplacements du coffre sont toujours essayés (temps constant). */
     @Synchronized
     fun unlock(code: String): UnlockResult {
         val (failures, last) = attempts()
@@ -145,14 +123,12 @@ class StateStore(context: Context) {
         write(stateFile, nonce + Aead.seal(key, nonce, state.encode(), AAD_STATE))
     }
 
-    /** Oublie la clé de données (verrouillage). */
     @Synchronized
     fun lock() {
         dek?.fill(0)
         dek = null
     }
 
-    /** Détruit la clé Keystore puis efface tous les fichiers. Irréversible. */
     @Synchronized
     fun wipe() {
         runCatching { keyStore().deleteEntry(ALIAS) }
@@ -160,7 +136,6 @@ class StateStore(context: Context) {
         for (f in listOf(stateFile, lockFile, attemptsFile, legacyDek, legacyState)) runCatching { f.delete() }
     }
 
-    /** Où vit la clé Keystore (pour « Mes infos en direct »). Ne lit que ses propriétés. */
     @Synchronized
     fun keyProtection(): String {
         val key = keyStore().getKey(ALIAS, null) as? SecretKey ?: return "clé absente"
@@ -173,15 +148,12 @@ class StateStore(context: Context) {
         }
     }
 
-    /** Chiffre le coffre par la clé Keystore et l'écrit (création de la clé si besoin). */
     private fun writeBox(box: ByteArray) {
         val c = Cipher.getInstance("AES/GCM/NoPadding")
         c.init(Cipher.ENCRYPT_MODE, keystoreKey(create = true))
         c.updateAAD(AAD_LOCK)
         write(lockFile, c.iv + c.doFinal(box))
     }
-
-    // ---------- fichiers ----------
 
     private fun write(f: AtomicFile, data: ByteArray) {
         val out = f.startWrite()
@@ -205,8 +177,6 @@ class StateStore(context: Context) {
     private fun resetAttempts() {
         attemptsFile.delete()
     }
-
-    // ---------- Keystore ----------
 
     private fun keyStore(): KeyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
 
