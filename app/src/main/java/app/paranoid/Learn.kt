@@ -271,6 +271,54 @@ private fun Line(content: @Composable RowScope.() -> Unit) =
 
 private val TOPICS: List<Topic> get() = listOf(
     Topic(
+        title = tr("Glossaire", "Glossary"),
+        summary = tr("Les mots techniques, en une phrase", "Technical words, in one sentence"),
+        simple = tr(
+            "AES-256-GCM : chiffrement symétrique (même clé pour chiffrer et déchiffrer) qui détecte aussi toute modification.\n\n" +
+                "Argon2id : transforme un code en clé, en exigeant beaucoup de mémoire et de calcul, pour ralentir qui essaie tous les codes.\n\n" +
+                "Boîte : emplacement sur le relais où un contact dépose les messages. Une boîte par contact et par sens.\n\n" +
+                "Bourrage : octets ajoutés pour que tous les messages aient la même taille.\n\n" +
+                "Clé privée / clé publique : la privée reste secrète sur le téléphone ; la publique se partage.\n\n" +
+                "Code de destruction : saisi à la place du code de déverrouillage, il alerte les contacts et efface tout.\n\n" +
+                "Confidentialité persistante : voler les clés d'aujourd'hui ne permet pas de lire les messages d'hier.\n\n" +
+                "Diffie-Hellman : méthode qui permet à deux personnes d'obtenir un secret commun en n'échangeant que des clés publiques.\n\n" +
+                "Double Ratchet : le mécanisme qui renouvelle la clé à chaque message.\n\n" +
+                "Ed25519 : algorithme de signature, utilisé ici pour l'identité et pour s'authentifier auprès des boîtes.\n\n" +
+                "Empreinte de sécurité : résumé court de la clé publique d'une personne, à comparer de vive voix.\n\n" +
+                "Empreinte du relais : résumé SHA-256 du certificat du relais, pour être sûr de parler au bon serveur.\n\n" +
+                "Épinglage : n'accepter qu'un certificat précis, plutôt que n'importe quel certificat validé par une autorité.\n\n" +
+                "HKDF, HMAC : fonctions qui dérivent de nouvelles clés à partir d'un secret.\n\n" +
+                "Keystore, StrongBox : coffre matériel du téléphone ; une clé qui y est créée ne peut pas en sortir.\n\n" +
+                "Métadonnées : tout ce qui entoure un message sans être son contenu (qui, quand, d'où).\n\n" +
+                "Nonce : valeur à usage unique, qui empêche de rejouer une requête ou de réutiliser une clé.\n\n" +
+                "Relais : serveur qui garde les messages chiffrés en attendant qu'ils soient relevés.\n\n" +
+                "SHA-256 : fonction de hachage ; elle produit un résumé de 32 octets, différent pour chaque donnée.\n\n" +
+                "TLS 1.3 : le chiffrement de la connexion entre le téléphone et le relais.\n\n" +
+                "X25519 : algorithme Diffie-Hellman sur courbe elliptique, utilisé pour calculer les secrets partagés.",
+            "AES-256-GCM: symmetric encryption (same key to encrypt and decrypt) that also detects any change.\n\n" +
+                "Argon2id: turns a code into a key, requiring a lot of memory and computation, to slow down anyone trying every code.\n\n" +
+                "Box: a slot on the relay where a contact deposits messages. One box per contact and per direction.\n\n" +
+                "Destruction code: entered instead of the unlock code, it alerts contacts and erases everything.\n\n" +
+                "Diffie-Hellman: a method that lets two people obtain a shared secret by exchanging only public keys.\n\n" +
+                "Double Ratchet: the mechanism that renews the key for every message.\n\n" +
+                "Ed25519: a signature algorithm, used here for identity and to authenticate with boxes.\n\n" +
+                "Forward secrecy: stealing today's keys does not allow reading yesterday's messages.\n\n" +
+                "HKDF, HMAC: functions that derive new keys from a secret.\n\n" +
+                "Keystore, StrongBox: the phone's hardware vault; a key created there cannot leave it.\n\n" +
+                "Metadata: everything around a message without being its content (who, when, from where).\n\n" +
+                "Nonce: a single-use value that prevents replaying a request or reusing a key.\n\n" +
+                "Padding: bytes added so that all messages have the same size.\n\n" +
+                "Pinning: accepting only one specific certificate, rather than any certificate validated by an authority.\n\n" +
+                "Private key / public key: the private one stays secret on the phone; the public one is shared.\n\n" +
+                "Relay: a server that keeps encrypted messages until they are fetched.\n\n" +
+                "Relay fingerprint: the SHA-256 summary of the relay's certificate, to be sure to talk to the right server.\n\n" +
+                "Safety fingerprint: a short summary of a person's public key, to compare out loud.\n\n" +
+                "SHA-256: a hash function; it produces a 32-byte summary, different for every piece of data.\n\n" +
+                "TLS 1.3: the encryption of the connection between the phone and the relay.\n\n" +
+                "X25519: an elliptic-curve Diffie-Hellman algorithm, used to compute shared secrets.",
+        ),
+    ),
+    Topic(
         title = tr("L'identité : les clés", "Identity: the keys"),
         summary = tr("Pas de compte : une paire de clés créée sur le téléphone", "No account: a key pair created on the phone"),
         diagram = {
@@ -649,17 +697,14 @@ private val TOPICS: List<Topic> get() = listOf(
                 "• le vol des clés après coup : les anciens messages restent illisibles.\n\n" +
                 "Paranoid ne peut rien contre :\n" +
                 "• un téléphone compromis (logiciel espion, téléphone rooté) : il voit l'écran et le clavier ;\n" +
-                "• un clavier qui ignore la demande « sans apprentissage » de l'appli, ou qui envoie ce qui est tapé : un clavier hors ligne est préférable ;\n" +
-                "• les métadonnées : le relais voit les adresses IP et les heures, et peut deviner qui parle à qui ;\n" +
                 "• le contact lui-même, qui peut montrer ou photographier ses messages ;\n" +
                 "• une photo de l'écran prise avec un autre appareil.\n\n" +
                 "Limites connues :\n" +
-                "• quelqu'un qui analyse les fichiers voit qu'il existe deux codes, sans savoir lequel détruit ;\n" +
+                "• quelqu'un qui analyse les fichiers voit qu'il existe deux codes ;\n" +
                 "• le compteur d'essais est un fichier, qu'un attaquant ayant les droits root pourrait restaurer ;\n" +
                 "• sans réseau, l'alerte du code de destruction ne part pas, mais l'effacement a lieu quand même ;\n" +
                 "• un message non relevé en 7 jours est perdu ;\n" +
-                "• effacer l'historique ne l'efface que sur ce téléphone ;\n" +
-                "• le code n'a pas encore été relu par un expert indépendant.",
+                "• effacer l'historique ne l'efface que sur ce téléphone.",
             "Paranoid protects against:\n" +
                 "• a curious or hacked relay: it reads nothing;\n" +
                 "• network eavesdropping (public Wi-Fi, carrier): double encryption, TLS and end to end;\n" +
@@ -668,17 +713,14 @@ private val TOPICS: List<Topic> get() = listOf(
                 "• keys stolen later: old messages stay unreadable.\n\n" +
                 "Paranoid cannot help against:\n" +
                 "• a compromised phone (spyware, rooted phone): it sees the screen and the keyboard;\n" +
-                "• a keyboard that ignores the app's “no learning” request, or sends what is typed: an offline keyboard is preferable;\n" +
-                "• metadata: the relay sees IP addresses and times, and can guess who talks to whom;\n" +
                 "• the contact themselves, who can show or photograph their messages;\n" +
                 "• a photo of the screen taken with another device.\n\n" +
                 "Known limits:\n" +
-                "• someone analysing the files sees that two codes exist, without knowing which one destroys;\n" +
+                "• someone analysing the files sees that two codes exist;\n" +
                 "• the attempt counter is a file, which an attacker with root rights could restore;\n" +
                 "• without network, the destruction code alert is not sent, but erasure happens anyway;\n" +
                 "• a message not fetched within 7 days is lost;\n" +
-                "• erasing history only erases it on this phone;\n" +
-                "• the code has not yet been reviewed by an independent expert.",
+                "• erasing history only erases it on this phone.",
         ),
     ),
     Topic(
@@ -705,54 +747,6 @@ private val TOPICS: List<Topic> get() = listOf(
                 "(PROTOCOL.md for the relay, MESSAGES.md for encryption). The APK is built by GitHub Actions, with its SHA-256 fingerprints.\n\n" +
                 "6. The relay itself: relaycli, the command-line client, speaks the same protocol as the app. Its debug command " +
                 "shows the state of a session, without anything secret.",
-        ),
-    ),
-    Topic(
-        title = tr("Glossaire", "Glossary"),
-        summary = tr("Les mots techniques, en une phrase", "Technical words, in one sentence"),
-        simple = tr(
-            "AES-256-GCM : chiffrement symétrique (même clé pour chiffrer et déchiffrer) qui détecte aussi toute modification.\n\n" +
-                "Argon2id : transforme un code en clé, en exigeant beaucoup de mémoire et de calcul, pour ralentir qui essaie tous les codes.\n\n" +
-                "Boîte : emplacement sur le relais où un contact dépose les messages. Une boîte par contact et par sens.\n\n" +
-                "Bourrage : octets ajoutés pour que tous les messages aient la même taille.\n\n" +
-                "Clé privée / clé publique : la privée reste secrète sur le téléphone ; la publique se partage.\n\n" +
-                "Code de destruction : saisi à la place du code de déverrouillage, il alerte les contacts et efface tout.\n\n" +
-                "Confidentialité persistante : voler les clés d'aujourd'hui ne permet pas de lire les messages d'hier.\n\n" +
-                "Diffie-Hellman : méthode qui permet à deux personnes d'obtenir un secret commun en n'échangeant que des clés publiques.\n\n" +
-                "Double Ratchet : le mécanisme qui renouvelle la clé à chaque message.\n\n" +
-                "Ed25519 : algorithme de signature, utilisé ici pour l'identité et pour s'authentifier auprès des boîtes.\n\n" +
-                "Empreinte de sécurité : résumé court de la clé publique d'une personne, à comparer de vive voix.\n\n" +
-                "Empreinte du relais : résumé SHA-256 du certificat du relais, pour être sûr de parler au bon serveur.\n\n" +
-                "Épinglage : n'accepter qu'un certificat précis, plutôt que n'importe quel certificat validé par une autorité.\n\n" +
-                "HKDF, HMAC : fonctions qui dérivent de nouvelles clés à partir d'un secret.\n\n" +
-                "Keystore, StrongBox : coffre matériel du téléphone ; une clé qui y est créée ne peut pas en sortir.\n\n" +
-                "Métadonnées : tout ce qui entoure un message sans être son contenu (qui, quand, d'où).\n\n" +
-                "Nonce : valeur à usage unique, qui empêche de rejouer une requête ou de réutiliser une clé.\n\n" +
-                "Relais : serveur qui garde les messages chiffrés en attendant qu'ils soient relevés.\n\n" +
-                "SHA-256 : fonction de hachage ; elle produit un résumé de 32 octets, différent pour chaque donnée.\n\n" +
-                "TLS 1.3 : le chiffrement de la connexion entre le téléphone et le relais.\n\n" +
-                "X25519 : algorithme Diffie-Hellman sur courbe elliptique, utilisé pour calculer les secrets partagés.",
-            "AES-256-GCM: symmetric encryption (same key to encrypt and decrypt) that also detects any change.\n\n" +
-                "Argon2id: turns a code into a key, requiring a lot of memory and computation, to slow down anyone trying every code.\n\n" +
-                "Box: a slot on the relay where a contact deposits messages. One box per contact and per direction.\n\n" +
-                "Destruction code: entered instead of the unlock code, it alerts contacts and erases everything.\n\n" +
-                "Diffie-Hellman: a method that lets two people obtain a shared secret by exchanging only public keys.\n\n" +
-                "Double Ratchet: the mechanism that renews the key for every message.\n\n" +
-                "Ed25519: a signature algorithm, used here for identity and to authenticate with boxes.\n\n" +
-                "Forward secrecy: stealing today's keys does not allow reading yesterday's messages.\n\n" +
-                "HKDF, HMAC: functions that derive new keys from a secret.\n\n" +
-                "Keystore, StrongBox: the phone's hardware vault; a key created there cannot leave it.\n\n" +
-                "Metadata: everything around a message without being its content (who, when, from where).\n\n" +
-                "Nonce: a single-use value that prevents replaying a request or reusing a key.\n\n" +
-                "Padding: bytes added so that all messages have the same size.\n\n" +
-                "Pinning: accepting only one specific certificate, rather than any certificate validated by an authority.\n\n" +
-                "Private key / public key: the private one stays secret on the phone; the public one is shared.\n\n" +
-                "Relay: a server that keeps encrypted messages until they are fetched.\n\n" +
-                "Relay fingerprint: the SHA-256 summary of the relay's certificate, to be sure to talk to the right server.\n\n" +
-                "Safety fingerprint: a short summary of a person's public key, to compare out loud.\n\n" +
-                "SHA-256: a hash function; it produces a 32-byte summary, different for every piece of data.\n\n" +
-                "TLS 1.3: the encryption of the connection between the phone and the relay.\n\n" +
-                "X25519: an elliptic-curve Diffie-Hellman algorithm, used to compute shared secrets.",
         ),
     ),
 )

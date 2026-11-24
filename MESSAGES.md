@@ -102,5 +102,4 @@ Types :
 - **Usurpation après vol de clé (KCI)** : celui qui vole la clé `xk` d'Alice peut se faire passer pour Bob **auprès d'Alice**, car `SK` dépend seulement des clés statiques. C'est une propriété classique des échanges statique-statique.
 - **En-tête en clair** : le relais voit la clé DH courante et les compteurs, donc qui écrit à son tour et combien. Il connaît déjà le nombre de messages par boîte. La spécification prévoit une variante à en-têtes chiffrés.
 - **Réinitialisation** : après `reset` d'un côté, l'autre doit faire de même ; après `remove`, les deux refont l'appairage. Sinon, la session reste désynchronisée.
-- **Crypto maison** : l'implémentation suit la spécification mais n'a pas été relue par un tiers. À faire avant toute diffusion.
 

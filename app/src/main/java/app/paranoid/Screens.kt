@@ -535,7 +535,7 @@ fun LockScreen(ui: Ui, vm: MainViewModel) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Spacer(Modifier.height(48.dp))
-            Image(painterResource(R.drawable.logo), contentDescription = "Paranoid", modifier = Modifier.widthIn(max = 220.dp))
+            EyeLogo(Modifier.widthIn(max = 220.dp))
             CodeField(code, { code = it }, "Code", onDone = submit)
             Button(onClick = submit, enabled = code.isNotEmpty() && !ui.busy, modifier = Modifier.fillMaxWidth()) {
                 Text(if (ui.busy) tr("Vérification…", "Checking…") else tr("Déverrouiller", "Unlock"))
