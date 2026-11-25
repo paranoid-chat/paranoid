@@ -5,17 +5,18 @@ plugins {
 }
 
 val releaseKeystore: String? = System.getenv("PARANOID_KEYSTORE")
+val uploadKeystore: String? = System.getenv("PARANOID_UPLOAD_KEYSTORE")
 
 android {
     namespace = "app.paranoid"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "app.paranoid"
         minSdk = 33
-        targetSdk = 35
-        versionCode = 19
-        versionName = "1.3.5"
+        targetSdk = 36
+        versionCode = 20
+        versionName = "1.3.6"
     }
 
     signingConfigs {
@@ -27,12 +28,33 @@ android {
                 keyPassword = System.getenv("PARANOID_KEY_PASSWORD")
             }
         }
+        create("upload") {
+            if (uploadKeystore != null) {
+                storeFile = file(uploadKeystore)
+                storePassword = System.getenv("PARANOID_UPLOAD_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("PARANOID_UPLOAD_KEY_ALIAS")
+                keyPassword = System.getenv("PARANOID_UPLOAD_KEY_PASSWORD")
+            }
+        }
+    }
+
+    flavorDimensions += "store"
+    productFlavors {
+        create("full") {
+            dimension = "store"
+            buildConfigField("boolean", "DONATION", "true")
+            signingConfig = signingConfigs.getByName(if (releaseKeystore != null) "release" else "debug")
+        }
+        create("play") {
+            dimension = "store"
+            buildConfigField("boolean", "DONATION", "false")
+            if (uploadKeystore != null) signingConfig = signingConfigs.getByName("upload")
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName(if (releaseKeystore != null) "release" else "debug")
         }
     }
 

@@ -221,7 +221,7 @@ fun ContactsScreen(ui: Ui, vm: MainViewModel) {
                         DropdownMenuItem(text = { Text(tr("Paramètres", "Settings")) }, onClick = { menu = false; vm.goSettings() })
                         DropdownMenuItem(text = { Text(tr("Comprendre Paranoid", "Understanding Paranoid")) }, onClick = { menu = false; vm.goLearn() })
                         DropdownMenuItem(text = { Text(tr("Mes infos en direct", "My live info")) }, onClick = { menu = false; vm.goMyInfo() })
-                        DropdownMenuItem(text = { Text("Donation") }, onClick = { menu = false; vm.goDonation() })
+                        if (BuildConfig.DONATION) DropdownMenuItem(text = { Text("Donation") }, onClick = { menu = false; vm.goDonation() })
                     }
                 },
             )

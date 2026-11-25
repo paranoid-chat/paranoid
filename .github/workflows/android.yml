@@ -34,12 +34,26 @@ jobs:
             echo "::warning::Aucun keystore dans les secrets : APK signé avec une clé de debug jetable. Chaque build aura une signature différente et l'appli devra être désinstallée (identité perdue) pour être mise à jour."
           fi
 
+      - name: Clé d'envoi Google Play
+        env:
+          UPLOAD_B64: ${{ secrets.PARANOID_UPLOAD_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$UPLOAD_B64" ]; then
+            echo "$UPLOAD_B64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+            echo "PARANOID_UPLOAD_KEYSTORE=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Pas de clé d'envoi Google Play dans les secrets : AAB Play non signé."
+          fi
+
       - name: Tests du core et compilation
         env:
           PARANOID_KEYSTORE_PASSWORD: ${{ secrets.PARANOID_KEYSTORE_PASSWORD }}
           PARANOID_KEY_ALIAS: ${{ secrets.PARANOID_KEY_ALIAS }}
           PARANOID_KEY_PASSWORD: ${{ secrets.PARANOID_KEY_PASSWORD }}
-        run: ./gradlew --no-daemon --stacktrace :core:test :app:assembleRelease
+          PARANOID_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.PARANOID_UPLOAD_KEYSTORE_PASSWORD }}
+          PARANOID_UPLOAD_KEY_ALIAS: ${{ secrets.PARANOID_UPLOAD_KEY_ALIAS }}
+          PARANOID_UPLOAD_KEY_PASSWORD: ${{ secrets.PARANOID_UPLOAD_KEY_PASSWORD }}
+        run: ./gradlew --no-daemon --stacktrace :core:test :app:assembleFullRelease :app:bundlePlayRelease
 
       - name: Rapport de tests
         if: failure()
@@ -52,19 +66,21 @@ jobs:
       - name: Vérifier la signature
         run: |
           signer=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
-          "$signer" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk | grep -iE "verified using v2|certificate (DN|SHA-256)"
+          "$signer" verify --verbose --print-certs app/build/outputs/apk/full/release/app-full-release.apk | grep -iE "verified using v2|certificate (DN|SHA-256)"
 
       - name: Nom de l'APK
         run: |
           v=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
-          mv app/build/outputs/apk/release/app-release.apk "paranoid-$v-${GITHUB_SHA::7}.apk"
-          sha256sum paranoid-*.apk | tee SHA256SUMS
+          mv app/build/outputs/apk/full/release/app-full-release.apk "paranoid-$v-${GITHUB_SHA::7}.apk"
+          mv app/build/outputs/bundle/playRelease/app-play-release.aab "paranoid-play-$v-${GITHUB_SHA::7}.aab"
+          sha256sum paranoid-*.apk paranoid-play-*.aab | tee SHA256SUMS
 
       - uses: actions/upload-artifact@v4
         with:
           name: paranoid-apk
           path: |
             paranoid-*.apk
+            paranoid-play-*.aab
             SHA256SUMS
           retention-days: 14
 
