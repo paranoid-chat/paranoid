@@ -47,6 +47,7 @@ android {
         }
         create("play") {
             dimension = "store"
+            applicationId = "paranoid.chat"
             buildConfigField("boolean", "DONATION", "false")
             if (uploadKeystore != null) signingConfig = signingConfigs.getByName("upload")
         }
