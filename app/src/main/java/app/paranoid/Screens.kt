@@ -69,7 +69,6 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.KeyboardType
@@ -183,7 +182,7 @@ fun SetupScreen(ui: Ui, vm: MainViewModel) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = { setAppLanguage(ctx, !Lang.english) }) { Text(if (Lang.english) "Français" else "English") }
             }
-            Image(painterResource(R.drawable.logo), contentDescription = "Paranoid", modifier = Modifier.widthIn(max = 220.dp))
+            EyeLogo(Modifier.widthIn(max = 220.dp))
             Text(
                 "Paranoid - The Chat app for the truly paranoids",
                 style = MaterialTheme.typography.titleMedium,
